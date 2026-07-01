@@ -26,5 +26,5 @@ myruflo = "myruflo.cli:main"
 [tool.setuptools.packages.find]
 include = ["myruflo*"]
 
-[tool.poetry]
-include = ["myruflo/web/static/**/*"]
+[tool.setuptools.package-data]
+"myruflo.web" = ["templates/**/*", "static/**/*"]
