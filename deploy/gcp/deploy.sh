@@ -54,13 +54,11 @@ gcloud run jobs deploy "$JOB_NAME" \
   --task-timeout=900
 
 echo "==> Deploying Cloud Run Service: $SERVICE_NAME (web UI)"
-# The key is already bound on this service as a plain env var named
-# MYRUFLO_EVL (matching the Secret Manager secret's own name, the default
-# a hand-configured secret reference gets in the Cloud Run console) rather
-# than renamed to ANTHROPIC_API_KEY like the Job uses below. config.py's
-# _resolve_api_key() checks MYRUFLO_EVL as a fallback, so keep binding it
-# under that same name here rather than introducing a second, differently
-# named binding.
+# The key is bound on this service as a plain env var named ANTHROPIC_AI_KEY
+# (not renamed to ANTHROPIC_API_KEY like the Job uses below). config.py's
+# _resolve_api_key() checks ANTHROPIC_AI_KEY as a fallback, so keep binding
+# it under that same name here rather than reverting it to a different one
+# on the next deploy.
 # --set-env-vars replaces the full env var set on this revision, which also
 # clears out any stray MYRUFLO_TASK left over from earlier config — the new
 # dual-mode entrypoint would otherwise mistake this for a Job and never
@@ -75,7 +73,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE" \
   --region="$REGION" \
   --service-account="$SA_EMAIL" \
-  --set-secrets="MYRUFLO_EVL=${SECRET_NAME}:latest" \
+  --set-secrets="ANTHROPIC_AI_KEY=${SECRET_NAME}:latest" \
   --set-env-vars="MYRUFLO_ALLOW_SHELL=false" \
   --max-instances=1 \
   --min-instances=1 \

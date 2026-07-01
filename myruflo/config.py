@@ -52,7 +52,7 @@ def _fetch_gcp_secret(project: str, secret_name: str) -> str | None:
 
 def _resolve_api_key() -> tuple[str, str]:
     """Return (api_key, source) where source is one of:
-    env, env:MYRUFLO_EVL, secret-manager, unset.
+    env, env:MYRUFLO_EVL, env:ANTHROPIC_AI_KEY, secret-manager, unset.
 
     Resolution order:
     1. ANTHROPIC_API_KEY env var — covers local `.env` files AND Cloud Run's
@@ -62,13 +62,17 @@ def _resolve_api_key() -> tuple[str, str]:
        under its own name instead of renaming it to ANTHROPIC_API_KEY (e.g.
        `--set-secrets=MYRUFLO_EVL=MYRUFLO_EVL:latest`, or a secret reference
        set up by hand through the Cloud Run console, which defaults the env
-       var name to match the secret name). Support that directly so hosting
-       setups don't have to rename anything to work.
-    3. Secret Manager, read directly via the API — for hosting setups where
+       var name to match the secret name).
+    3. ANTHROPIC_AI_KEY env var — an alternate name used on the `myruflo`
+       web Service's secret binding.
+    4. Secret Manager, read directly via the API — for hosting setups where
        the key isn't bound as an env var at all. Only attempted when a GCP
        project is inferable (MYRUFLO_GCP_PROJECT, or GOOGLE_CLOUD_PROJECT
        which GCP compute environments set automatically) and only if the
        `google-cloud-secret-manager` package is installed.
+
+    Supporting multiple env var names directly means hosting setups don't
+    have to rename anything on the Cloud Run side to work with this app.
     """
     env_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if env_key:
@@ -77,6 +81,10 @@ def _resolve_api_key() -> tuple[str, str]:
     evl_key = os.environ.get("MYRUFLO_EVL", "")
     if evl_key:
         return evl_key, "env:MYRUFLO_EVL"
+
+    ai_key = os.environ.get("ANTHROPIC_AI_KEY", "")
+    if ai_key:
+        return ai_key, "env:ANTHROPIC_AI_KEY"
 
     project = os.environ.get("MYRUFLO_GCP_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT")
     if project:

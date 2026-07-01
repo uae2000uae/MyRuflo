@@ -91,10 +91,11 @@ myruflo serve
 The Anthropic API key lives in Secret Manager as **`MYRUFLO_EVL`**, not in a committed `.env`. `myruflo/config.py` resolves the key in this order:
 
 1. **`ANTHROPIC_API_KEY` env var** — set locally via `.env`, or injected by Cloud Run's `--set-secrets=ANTHROPIC_API_KEY=MYRUFLO_EVL:latest` binding. This is what the `myruflo-job` Job uses; no extra dependency needed for this path.
-2. **`MYRUFLO_EVL` env var** — for bindings that keep the secret's own name instead of renaming it to `ANTHROPIC_API_KEY` (e.g. `--set-secrets=MYRUFLO_EVL=MYRUFLO_EVL:latest`, or a secret reference added by hand through the Cloud Run console, which defaults the env var name to match the secret). This is what the `myruflo` web Service uses.
-3. **Direct Secret Manager read** — fallback for hosting setups that don't bind the secret as an env var at all. Only attempted when a GCP project is inferable (`GOOGLE_CLOUD_PROJECT`, which Cloud Run/GCE set automatically, or `MYRUFLO_GCP_PROJECT`) and the optional `google-cloud-secret-manager` package is installed (`pip install -e ".[gcp]"`).
+2. **`MYRUFLO_EVL` env var** — for bindings that keep the secret's own name instead of renaming it (e.g. `--set-secrets=MYRUFLO_EVL=MYRUFLO_EVL:latest`, or a secret reference added by hand through the Cloud Run console, which defaults the env var name to match the secret).
+3. **`ANTHROPIC_AI_KEY` env var** — the name currently used on the `myruflo` web Service's secret binding (`--set-secrets=ANTHROPIC_AI_KEY=MYRUFLO_EVL:latest`).
+4. **Direct Secret Manager read** — fallback for hosting setups that don't bind the secret as an env var at all. Only attempted when a GCP project is inferable (`GOOGLE_CLOUD_PROJECT`, which Cloud Run/GCE set automatically, or `MYRUFLO_GCP_PROJECT`) and the optional `google-cloud-secret-manager` package is installed (`pip install -e ".[gcp]"`).
 
-Run `myruflo doctor` to see which source supplied the key (`source: env`, `source: env:MYRUFLO_EVL`, or `source: secret-manager`).
+Run `myruflo doctor` to see which source supplied the key (`source: env`, `source: env:MYRUFLO_EVL`, `source: env:ANTHROPIC_AI_KEY`, or `source: secret-manager`).
 
 ### One image, two Cloud Run shapes
 
