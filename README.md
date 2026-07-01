@@ -80,7 +80,9 @@ myruflo serve
 ```
 
 - **Accounts**: the first person to register becomes the admin; everyone after that is a regular user. Each user has their own private conversation history.
-- **Chat**: pick Auto-detect / Force single agent / Force full swarm per message, same routing as `myruflo run`'s `--swarm`/`--no-swarm` flags.
+- **Chat**: pick Auto-detect / Force single agent / Force full swarm per message, same routing as `myruflo run`'s `--swarm`/`--no-swarm` flags. The composer stays pinned at the bottom of the screen while the conversation scrolls independently above it.
+- **File attachments**: attach up to 5 files (5MB each) to a message. Images are sent to Claude as native vision content; other text-decodable files (code, `.txt`, `.json`, `.md`, ...) are inlined into the prompt; binary formats that can't be read as text are stored and noted but not parsed. Files live under `<workspace>/uploads/<conversation_id>/`, and attachment metadata is tracked in `data/app.db`'s `attachments` table.
+- **Enhance**: the ✨ button next to the composer sends your draft to a quick, tool-free LLM call (fast model tier) that rewrites it to be clearer and more specific, then drops the result back into the textarea for you to edit or send.
 - **Memory**: a read-only `/memory` page mirrors `myruflo memory list`/`search`.
 - **Admin panel** (`/admin`, visible only to admins): usage dashboard (users, conversations, task volume, success rate, recent activity) and a page to enable/disable which agent tools (`read_file`, `write_file`, `edit_file`, `list_dir`, `glob_search`, `grep_search`, `run_shell`) are available to every user. `run_shell` still requires `MYRUFLO_ALLOW_SHELL=true` regardless of that toggle — the env var is the hard kill switch, the admin toggle can only further restrict it.
 - Set `WEB_SECRET_KEY` in `.env` (see `.env.example`) so login sessions survive a restart; without it a random key is generated each time the server starts.

@@ -43,11 +43,16 @@ class Agent:
         self._enabled_tools = enabled_tools
         self._tier, self._system_prompt = ROLES[role]
 
-    def run(self, task: str, context: str = "") -> AgentResult:
+    def run(
+        self, task: str, context: str = "", *, image_attachments: list[dict] | None = None
+    ) -> AgentResult:
         hint = self.hooks.pre_task(self.role, task)
         system = self._system_prompt if not hint else f"{self._system_prompt}\n\n{hint}"
 
-        user_content = task if not context else f"{context}\n\n---\n\nYour task:\n{task}"
+        user_text = task if not context else f"{context}\n\n---\n\nYour task:\n{task}"
+        user_content: str | list[dict] = (
+            [{"type": "text", "text": user_text}, *image_attachments] if image_attachments else user_text
+        )
         messages: list[dict] = [{"role": "user", "content": user_content}]
 
         effective_allow_shell = self.config.allow_shell and (

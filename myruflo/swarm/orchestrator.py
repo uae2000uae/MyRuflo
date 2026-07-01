@@ -69,7 +69,12 @@ class Orchestrator:
         self.hooks = hooks
 
     def run(
-        self, task: str, force_swarm: bool | None = None, *, enabled_tools: set[str] | None = None
+        self,
+        task: str,
+        force_swarm: bool | None = None,
+        *,
+        enabled_tools: set[str] | None = None,
+        image_attachments: list[dict] | None = None,
     ) -> SwarmReport:
         pipeline = choose_pipeline(task, force_swarm)
         report = SwarmReport(task=task, pipeline=pipeline)
@@ -77,7 +82,7 @@ class Orchestrator:
         context = ""
         for role in pipeline:
             agent = Agent(role, self.config, self.llm, self.memory, self.hooks, enabled_tools=enabled_tools)
-            result = agent.run(task, context=context)
+            result = agent.run(task, context=context, image_attachments=image_attachments)
             report.results.append(result)
             handoff = f"[{role} said]:\n{result.final_text}"
             context = f"{context}\n\n{handoff}" if context else handoff

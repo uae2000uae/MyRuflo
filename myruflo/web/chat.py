@@ -1,5 +1,6 @@
-"""The core chat experience: conversations, messages, and running the
-existing Orchestrator/Agent pipeline on behalf of a logged-in user.
+"""The core chat experience: conversations, messages, file attachments, and
+running the existing Orchestrator/Agent pipeline on behalf of a logged-in
+user.
 """
 from __future__ import annotations
 
@@ -7,14 +8,15 @@ import sqlite3
 import time
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import RedirectResponse
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from myruflo.hooks.manager import HooksManager
 from myruflo.llm.client import LLMClient
 from myruflo.memory.store import MemoryStore
 from myruflo.swarm.orchestrator import Orchestrator
+from myruflo.web import attachments as attachments_module
 from myruflo.web import tool_settings
 from myruflo.web.db import get_db
 from myruflo.web.deps import require_login
@@ -24,10 +26,16 @@ router = APIRouter()
 
 _MODE_TO_FORCE_SWARM = {"auto": None, "single": False, "swarm": True}
 
+_ENHANCE_SYSTEM_PROMPT = (
+    "You improve draft prompts for an AI coding/research assistant. Rewrite the "
+    "user's draft to be clearer, more specific, and more actionable, preserving "
+    "their original intent, technical details, and language. Return ONLY the "
+    "rewritten prompt text — no preamble, no quotes, no commentary."
+)
 
-class MessageRequest(BaseModel):
+
+class EnhanceRequest(BaseModel):
     text: str = Field(min_length=1, max_length=8000)
-    mode: str = "auto"
 
 
 def _get_owned_conversation(conn: sqlite3.Connection, conversation_id: int, user_id: int) -> sqlite3.Row:
@@ -39,10 +47,13 @@ def _get_owned_conversation(conn: sqlite3.Connection, conversation_id: int, user
     return row
 
 
-def _load_messages(conn: sqlite3.Connection, conversation_id: int) -> list[sqlite3.Row]:
-    return conn.execute(
+def _load_messages(conn: sqlite3.Connection, conversation_id: int) -> list[dict]:
+    rows = conn.execute(
         "SELECT * FROM messages WHERE conversation_id = ? ORDER BY id", (conversation_id,)
     ).fetchall()
+    return [
+        {**dict(row), "attachments": attachments_module.list_for_message(conn, row["id"])} for row in rows
+    ]
 
 
 @router.get("/")
@@ -82,11 +93,64 @@ def new_conversation(user: sqlite3.Row = Depends(require_login), conn: sqlite3.C
     return RedirectResponse(url=f"/chat/{cursor.lastrowid}", status_code=303)
 
 
+@router.get("/chat/{conversation_id}/attachments/{attachment_id}")
+def get_attachment(
+    conversation_id: int,
+    attachment_id: int,
+    user: sqlite3.Row = Depends(require_login),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    _get_owned_conversation(conn, conversation_id, user["id"])
+    row = conn.execute(
+        "SELECT attachments.* FROM attachments "
+        "JOIN messages ON messages.id = attachments.message_id "
+        "WHERE attachments.id = ? AND messages.conversation_id = ?",
+        (attachment_id, conversation_id),
+    ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    return FileResponse(
+        row["stored_path"], media_type=row["content_type"] or "application/octet-stream", filename=row["filename"]
+    )
+
+
+@router.post("/chat/{conversation_id}/enhance")
+def enhance_message(
+    conversation_id: int,
+    payload: EnhanceRequest,
+    request: Request,
+    user: sqlite3.Row = Depends(require_login),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    """Rewrite the user's draft into a clearer prompt via a single quick LLM
+    call — no tool use, no orchestrator pipeline, just a fast-tier completion.
+    """
+    _get_owned_conversation(conn, conversation_id, user["id"])
+    config = request.app.state.config
+    llm: LLMClient | None = request.app.state.llm
+    if llm is None:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_AI_KEY is not configured on the server.")
+
+    try:
+        response = llm.call(
+            model=config.model_for_tier("fast"),
+            system=_ENHANCE_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": payload.text}],
+            max_tokens=1024,
+        )
+    except Exception as exc:  # noqa: BLE001 - surface any LLM failure as a clean error
+        raise HTTPException(status_code=502, detail=f"Could not enhance the prompt: {exc}") from exc
+
+    return {"text": response.text.strip()}
+
+
 @router.post("/chat/{conversation_id}/message")
 def post_message(
     conversation_id: int,
-    payload: MessageRequest,
     request: Request,
+    text: str = Form(..., min_length=1, max_length=8000),
+    mode: str = Form("auto"),
+    files: list[UploadFile] = File(default=[]),
     user: sqlite3.Row = Depends(require_login),
     conn: sqlite3.Connection = Depends(get_db),
 ):
@@ -98,19 +162,34 @@ def post_message(
             status_code=500, detail="ANTHROPIC_AI_KEY is not configured on the server — chat is unavailable."
         )
 
-    force_swarm = _MODE_TO_FORCE_SWARM.get(payload.mode, None)
+    force_swarm = _MODE_TO_FORCE_SWARM.get(mode, None)
     enabled_tools = tool_settings.load_enabled_tools(conn)
 
     now = datetime.now(timezone.utc).isoformat()
-    conn.execute(
+    cursor = conn.execute(
         "INSERT INTO messages (conversation_id, role, content, pipeline, created_at) VALUES (?, 'user', ?, NULL, ?)",
-        (conversation_id, payload.text, now),
+        (conversation_id, text, now),
     )
+    user_message_id = cursor.lastrowid
     if conversation["title"] == "New conversation":
-        conn.execute(
-            "UPDATE conversations SET title = ? WHERE id = ?", (payload.text[:60], conversation_id)
-        )
+        conn.execute("UPDATE conversations SET title = ? WHERE id = ?", (text[:60], conversation_id))
     conn.commit()
+
+    image_blocks: list[dict] = []
+    inlined_text = ""
+    if files:
+        try:
+            image_blocks, inlined_text = attachments_module.save_attachments(
+                files,
+                conn=conn,
+                message_id=user_message_id,
+                conversation_id=conversation_id,
+                workspace=config.workspace,
+            )
+        except attachments_module.AttachmentError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    task_text = f"{text}\n\n{inlined_text}" if inlined_text else text
 
     memory = MemoryStore(config.memory_db_path)
     hooks = HooksManager(config.hooks_log_path, memory)
@@ -119,7 +198,9 @@ def post_message(
     started = time.perf_counter()
     try:
         try:
-            report = orchestrator.run(payload.text, force_swarm, enabled_tools=enabled_tools)
+            report = orchestrator.run(
+                task_text, force_swarm, enabled_tools=enabled_tools, image_attachments=image_blocks or None
+            )
         except Exception as exc:  # noqa: BLE001 - surface any LLM/agent failure as a clean chat error
             raise HTTPException(status_code=502, detail=f"The agent failed to respond: {exc}") from exc
     finally:
@@ -141,7 +222,7 @@ def post_message(
                 user["id"],
                 conversation_id,
                 result.role,
-                payload.text[:200],
+                text[:200],
                 int(bool(result.final_text.strip())),
                 result.turns_used,
                 duration_ms // max(len(report.results), 1),

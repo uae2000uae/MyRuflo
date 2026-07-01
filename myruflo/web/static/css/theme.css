@@ -68,7 +68,8 @@ code {
 
 .app-shell {
     display: flex;
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden;
 }
 
 .sidebar {
@@ -183,6 +184,8 @@ html[data-theme="light"] .theme-icon-light { display: inline; }
 .main-content {
     flex: 1;
     min-width: 0;
+    height: 100vh;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
 }
@@ -276,7 +279,8 @@ input:focus, select:focus, textarea:focus {
     width: 100%;
     margin: 0 auto;
     padding: 24px 24px 20px;
-    min-height: 100vh;
+    height: 100%;
+    min-height: 0;
 }
 
 .chat-header { margin-bottom: 8px; }
@@ -284,6 +288,7 @@ input:focus, select:focus, textarea:focus {
 
 .message-list {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
@@ -354,6 +359,71 @@ input:focus, select:focus, textarea:focus {
 .composer textarea:focus { box-shadow: none; }
 .mode-select { flex-shrink: 0; max-width: 160px; }
 .composer-hint { color: var(--text-muted); font-size: 13px; margin: 8px 0 0; }
+
+.composer-icon-btn {
+    flex-shrink: 0;
+    width: 38px;
+    height: 38px;
+    border-radius: 9px;
+    border: 1px solid transparent;
+    background: none;
+    color: var(--text-muted);
+    font-size: 17px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.composer-icon-btn:hover { background: var(--surface-hover); color: var(--text); }
+.composer-icon-btn:disabled { opacity: 0.6; cursor: default; }
+.composer-icon-btn.spinning { animation: spin 0.9s linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+.attachment-staging {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.attachment-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.attachment-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface-hover);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-size: 12.5px;
+    color: var(--text);
+}
+.attachment-chip.staged { padding-right: 6px; }
+
+.attachment-remove {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 15px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+}
+.attachment-remove:hover { color: var(--danger); }
+
+.attachment-image {
+    max-width: 220px;
+    max-height: 220px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    display: block;
+}
 
 /* ---- generic pages (admin / settings / memory) ---- */
 

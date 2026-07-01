@@ -20,13 +20,17 @@
     </div>
 
     {% if conversation %}
+    <div class="attachment-staging" id="attachmentStaging" hidden></div>
     <form id="composerForm" class="composer" data-conversation-id="{{ conversation.id }}">
+        <input type="file" id="fileInput" multiple hidden>
+        <button type="button" class="composer-icon-btn" id="attachBtn" title="Attach files">📎</button>
         <select name="mode" class="mode-select" title="How should this task be handled?">
             <option value="auto">Auto-detect</option>
             <option value="single">Force single agent</option>
             <option value="swarm">Force full swarm</option>
         </select>
         <textarea name="text" placeholder="Message MyRuflo..." required rows="1"></textarea>
+        <button type="button" class="composer-icon-btn" id="enhanceBtn" title="Enhance prompt">✨</button>
         <button type="submit" class="btn btn-primary send-btn" id="sendBtn">Send</button>
     </form>
     <p class="composer-hint" id="thinkingHint" hidden>MyRuflo is working on it…</p>

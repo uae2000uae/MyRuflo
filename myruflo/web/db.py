@@ -61,6 +61,18 @@ CREATE TABLE IF NOT EXISTS tool_settings (
     updated_at TEXT NOT NULL,
     updated_by INTEGER REFERENCES users(id)
 );
+
+CREATE TABLE IF NOT EXISTS attachments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id INTEGER NOT NULL REFERENCES messages(id),
+    filename TEXT NOT NULL,
+    content_type TEXT,
+    size_bytes INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    stored_path TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id);
 """
 
 
