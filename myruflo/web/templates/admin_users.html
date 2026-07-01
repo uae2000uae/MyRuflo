@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Users - MyRuflo{% endblock %}
+{% block content %}
+<div class="page">
+    <header class="page-header">
+        <h1>Admin dashboard</h1>
+        <nav class="page-tabs">
+            <a href="/admin">Dashboard</a>
+            <a href="/admin/tools">Tools</a>
+            <a href="/admin/users" class="active">Users</a>
+        </nav>
+    </header>
+
+    <section class="card">
+        <h2>All users</h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>Conversations</th>
+                        <th>Joined</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in users %}
+                    <tr>
+                        <td>{{ u.name }}</td>
+                        <td>{{ u.email }}</td>
+                        <td><span class="badge {% if u.role == 'admin' %}badge-admin{% endif %}">{{ u.role }}</span></td>
+                        <td>{{ u.conversation_count }}</td>
+                        <td>{{ u.created_at }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

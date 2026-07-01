@@ -68,13 +68,15 @@ class Orchestrator:
         self.memory = memory
         self.hooks = hooks
 
-    def run(self, task: str, force_swarm: bool | None = None) -> SwarmReport:
+    def run(
+        self, task: str, force_swarm: bool | None = None, *, enabled_tools: set[str] | None = None
+    ) -> SwarmReport:
         pipeline = choose_pipeline(task, force_swarm)
         report = SwarmReport(task=task, pipeline=pipeline)
 
         context = ""
         for role in pipeline:
-            agent = Agent(role, self.config, self.llm, self.memory, self.hooks)
+            agent = Agent(role, self.config, self.llm, self.memory, self.hooks, enabled_tools=enabled_tools)
             result = agent.run(task, context=context)
             report.results.append(result)
             handoff = f"[{role} said]:\n{result.final_text}"

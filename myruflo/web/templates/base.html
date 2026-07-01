@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MyRuflo{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/theme.css') }}">
+    <script>
+        (function () {
+            var saved = localStorage.getItem("myruflo-theme");
+            if (saved === "light" || saved === "dark") {
+                document.documentElement.setAttribute("data-theme", saved);
+            }
+        })();
+    </script>
+</head>
+<body>
+<div class="app-shell {% if not user %}no-sidebar{% endif %}">
+    {% if user %}
+    <button class="sidebar-toggle" id="sidebarToggle" aria-label="Toggle menu">&#9776;</button>
+    <aside class="sidebar" id="sidebar">
+        <div class="brand">
+            <span class="brand-mark">MR</span>
+            <span class="brand-name">MyRuflo</span>
+        </div>
+
+        <form method="post" action="/chat/new">
+            <button type="submit" class="btn btn-primary new-chat-btn">+ New chat</button>
+        </form>
+
+        <nav class="conversation-list">
+            {% for conv in conversations %}
+            <a href="/chat/{{ conv.id }}"
+               class="conversation-link {% if conversation and conversation.id == conv.id %}active{% endif %}">
+                {{ conv.title }}
+            </a>
+            {% else %}
+            <p class="empty-hint">No conversations yet</p>
+            {% endfor %}
+        </nav>
+
+        <div class="sidebar-footer">
+            <a href="/memory" class="nav-link">🧠 Memory</a>
+            <a href="/settings" class="nav-link">⚙ Settings</a>
+            {% if user.role == 'admin' %}
+            <a href="/admin" class="nav-link admin-link">🛡 Admin</a>
+            {% endif %}
+            <button id="themeToggle" class="nav-link theme-toggle" type="button">
+                <span class="theme-icon-dark">🌙</span><span class="theme-icon-light">☀️</span>
+                <span class="theme-label">Theme</span>
+            </button>
+            <form method="post" action="/logout">
+                <button type="submit" class="nav-link logout-btn">↪ Log out ({{ user.name }})</button>
+            </form>
+        </div>
+    </aside>
+    {% endif %}
+
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+</div>
+<script src="{{ url_for('static', path='js/theme.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

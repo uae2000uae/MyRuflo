@@ -11,12 +11,16 @@ if TYPE_CHECKING:
     from myruflo.memory.store import MemoryStore
 
 
-def build_tool_schemas(*, include_shell: bool, include_memory: bool) -> list[dict]:
+def build_tool_schemas(
+    *, include_shell: bool, include_memory: bool, enabled_tools: set[str] | None = None
+) -> list[dict]:
     schemas = list(FILE_TOOL_SCHEMAS)
     if include_shell:
         schemas.append(SHELL_TOOL_SCHEMA)
     if include_memory:
         schemas.extend(MEMORY_TOOL_SCHEMAS)
+    if enabled_tools is not None:
+        schemas = [schema for schema in schemas if schema["name"] in enabled_tools]
     return schemas
 
 

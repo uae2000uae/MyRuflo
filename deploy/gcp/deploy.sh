@@ -48,6 +48,11 @@ gcloud run jobs deploy "$JOB_NAME" \
   --max-retries=0 \
   --task-timeout=900
 
+gcloud run services update myruflo \
+  --region=us-central1 \
+  --set-env-vars=MYRUFLO_TASK="Deploy from GitHub"
+
+
 cat <<EOF
 
 Deployed. Run a task with:

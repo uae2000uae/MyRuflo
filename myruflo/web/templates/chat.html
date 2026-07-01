@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}{{ conversation.title if conversation else "New chat" }} - MyRuflo{% endblock %}
+{% block content %}
+<div class="chat-page">
+    <header class="chat-header">
+        <h1>{{ conversation.title if conversation else "Start a new conversation" }}</h1>
+    </header>
+
+    <div class="message-list" id="messageList">
+        {% if conversation %}
+            {% include "_message_list.html" %}
+        {% else %}
+        <div class="empty-state">
+            <p>Ask MyRuflo anything — a quick question, a bug fix, or a full feature build.</p>
+            <form method="post" action="/chat/new">
+                <button type="submit" class="btn btn-primary">+ New chat</button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+
+    {% if conversation %}
+    <form id="composerForm" class="composer" data-conversation-id="{{ conversation.id }}">
+        <select name="mode" class="mode-select" title="How should this task be handled?">
+            <option value="auto">Auto-detect</option>
+            <option value="single">Force single agent</option>
+            <option value="swarm">Force full swarm</option>
+        </select>
+        <textarea name="text" placeholder="Message MyRuflo..." required rows="1"></textarea>
+        <button type="submit" class="btn btn-primary send-btn" id="sendBtn">Send</button>
+    </form>
+    <p class="composer-hint" id="thinkingHint" hidden>MyRuflo is working on it…</p>
+    <p class="form-error" id="composerError" hidden></p>
+    {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', path='js/chat.js') }}"></script>
+{% endblock %}

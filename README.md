@@ -15,7 +15,7 @@ Every agent can read/write files, search the workspace (glob/grep), optionally r
 
 ```
 myruflo/
-  cli.py              CLI entry point (run / memory / init / doctor)
+  cli.py              CLI entry point (run / memory / init / doctor / serve)
   config.py           .env-based configuration, 3-tier model routing
   llm/client.py       Anthropic SDK wrapper (tool-use loop plumbing)
   tools/              read_file, write_file, edit_file, list_dir, glob_search,
@@ -28,6 +28,8 @@ myruflo/
     embedding.py      Dependency-light hashing-trick text embeddings (numpy only)
     store.py          SQLite-backed vector store (add/search per namespace)
   hooks/manager.py    Pre/post-task logging + pattern distillation into memory
+  web/                FastAPI app for `myruflo serve`: auth, chat, admin panel,
+                       tool-availability toggles, its own SQLite DB (data/app.db)
 ```
 
 Design choices worth knowing about:
@@ -67,6 +69,22 @@ myruflo memory search "pagination bug" --namespace patterns
 ```
 
 All file operations happen inside `./workspace` by default (change with `MYRUFLO_WORKSPACE` in `.env`) — point it at a real project directory to have MyRuflo work on it.
+
+## Web UI
+
+`myruflo serve` runs a local web UI on top of the same agents/orchestrator/memory code the CLI uses — a dark-blue (with a light mode) chat interface, multi-user accounts, and a role-gated admin panel.
+
+```bash
+myruflo serve
+# open http://localhost:8080
+```
+
+- **Accounts**: the first person to register becomes the admin; everyone after that is a regular user. Each user has their own private conversation history.
+- **Chat**: pick Auto-detect / Force single agent / Force full swarm per message, same routing as `myruflo run`'s `--swarm`/`--no-swarm` flags.
+- **Memory**: a read-only `/memory` page mirrors `myruflo memory list`/`search`.
+- **Admin panel** (`/admin`, visible only to admins): usage dashboard (users, conversations, task volume, success rate, recent activity) and a page to enable/disable which agent tools (`read_file`, `write_file`, `edit_file`, `list_dir`, `glob_search`, `grep_search`, `run_shell`) are available to every user. `run_shell` still requires `MYRUFLO_ALLOW_SHELL=true` regardless of that toggle — the env var is the hard kill switch, the admin toggle can only further restrict it.
+- Set `WEB_SECRET_KEY` in `.env` (see `.env.example`) so login sessions survive a restart; without it a random key is generated each time the server starts.
+- Web UI accounts/conversations/stats live in `data/app.db`, separate from the agent's own `data/memory.db`.
 
 ## Hosting on GCP
 

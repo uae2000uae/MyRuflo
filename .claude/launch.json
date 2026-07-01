@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "myruflo-web",
+      "runtimeExecutable": "C:\\Users\\shiha\\AppData\\Local\\Microsoft\\WindowsApps\\PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0\\python.exe",
+      "runtimeArgs": ["-m", "myruflo", "serve"],
+      "port": 8080,
+      "autoPort": true
+    }
+  ]
+}

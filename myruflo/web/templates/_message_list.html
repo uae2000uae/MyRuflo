@@ -1,0 +1,10 @@
+{% for message in messages %}
+<div class="msg msg-{{ message.role }}">
+    {% if message.role == 'assistant' and message.pipeline %}
+    <div class="pipeline-badge">{{ message.pipeline }}</div>
+    {% endif %}
+    <div class="msg-bubble">{{ message.content }}</div>
+</div>
+{% else %}
+<p class="empty-hint">Send a message to start the conversation.</p>
+{% endfor %}

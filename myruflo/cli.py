@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -74,6 +75,19 @@ def cmd_init(args: argparse.Namespace) -> None:
     (root / "workspace").mkdir(exist_ok=True)
     (root / "data").mkdir(exist_ok=True)
     print("Ready. Edit .env, then try: myruflo run \"summarize what's in this workspace\"")
+
+
+def cmd_serve(args: argparse.Namespace) -> None:
+    import uvicorn
+
+    from myruflo.web.app import create_app
+
+    config = load_config()
+    if not config.api_key:
+        print("WARNING: ANTHROPIC_API_KEY is not set - chat will be unavailable until it is.")
+    app = create_app(config)
+    port = int(os.environ.get("PORT", config.web_port))
+    uvicorn.run(app, host=config.web_host, port=port)
 
 
 def cmd_doctor(args: argparse.Namespace) -> None:
@@ -151,6 +165,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     doctor_parser = subparsers.add_parser("doctor", help="Check configuration and dependencies")
     doctor_parser.set_defaults(func=cmd_doctor)
+
+    serve_parser = subparsers.add_parser("serve", help="Run the web UI (chat + hidden admin panel)")
+    serve_parser.set_defaults(func=cmd_serve)
 
     return parser
 

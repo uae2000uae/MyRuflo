@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Tool availability - MyRuflo{% endblock %}
+{% block content %}
+<div class="page">
+    <header class="page-header">
+        <h1>Admin dashboard</h1>
+        <nav class="page-tabs">
+            <a href="/admin">Dashboard</a>
+            <a href="/admin/tools" class="active">Tools</a>
+            <a href="/admin/users">Users</a>
+        </nav>
+    </header>
+
+    <section class="card">
+        <h2>Agent tool availability</h2>
+        <p class="text-muted">
+            Control which tools the agent may use for every user. Disabling a tool here takes effect on the
+            next message sent. <code>run_shell</code> also depends on the server's <code>MYRUFLO_ALLOW_SHELL</code>
+            setting — it stays off regardless of this toggle if that's disabled.
+        </p>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Tool</th>
+                        <th>Description</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tool in tools %}
+                    <tr>
+                        <td><code>{{ tool.name }}</code></td>
+                        <td class="task-cell">{{ tool.description }}</td>
+                        <td>
+                            {% if tool.enabled %}
+                            <span class="pill pill-success">enabled</span>
+                            {% else %}
+                            <span class="pill pill-danger">disabled</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <form method="post" action="/admin/tools/{{ tool.name }}/toggle">
+                                <button type="submit" class="btn btn-secondary">
+                                    {{ "Disable" if tool.enabled else "Enable" }}
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

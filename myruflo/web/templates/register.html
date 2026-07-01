@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Register - MyRuflo{% endblock %}
+{% block content %}
+<div class="auth-page">
+    <div class="auth-card">
+        <div class="brand auth-brand">
+            <span class="brand-mark">MR</span>
+            <span class="brand-name">MyRuflo</span>
+        </div>
+        <h1>Create your account</h1>
+        <p class="text-muted">The first account created becomes the administrator.</p>
+        <form id="registerForm" class="auth-form">
+            <label>Name
+                <input type="text" name="name" required autocomplete="name" autofocus>
+            </label>
+            <label>Email
+                <input type="email" name="email" required autocomplete="email">
+            </label>
+            <label>Password
+                <input type="password" name="password" required minlength="8" autocomplete="new-password">
+            </label>
+            <p class="form-error" id="formError" hidden></p>
+            <button type="submit" class="btn btn-primary btn-block">Create account</button>
+        </form>
+        <p class="auth-switch">Already have an account? <a href="/login">Log in</a></p>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById("registerForm").addEventListener("submit", async function (event) {
+    event.preventDefault();
+    const errorEl = document.getElementById("formError");
+    errorEl.hidden = true;
+    const form = event.target;
+    const body = {
+        name: form.name.value,
+        email: form.email.value,
+        password: form.password.value,
+    };
+    const response = await fetch("/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        errorEl.textContent = data.detail || "Registration failed.";
+        errorEl.hidden = false;
+        return;
+    }
+    const data = await response.json();
+    window.location.href = data.redirect || "/";
+});
+</script>
+{% endblock %}

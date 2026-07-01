@@ -89,10 +89,17 @@ class Config:
     allow_shell: bool = False
     max_turns: int = 25
     max_tokens: int = 4096
+    web_host: str = "0.0.0.0"
+    web_port: int = 8080
+    web_secret_key: str = ""
 
     @property
     def memory_db_path(self) -> Path:
         return self.data_dir / "memory.db"
+
+    @property
+    def app_db_path(self) -> Path:
+        return self.data_dir / "app.db"
 
     @property
     def hooks_log_path(self) -> Path:
@@ -123,6 +130,9 @@ def load_config(project_root: Path | None = None) -> Config:
         allow_shell=_bool(os.environ.get("MYRUFLO_ALLOW_SHELL", "false")),
         max_turns=int(os.environ.get("MYRUFLO_MAX_TURNS", "25")),
         max_tokens=int(os.environ.get("MYRUFLO_MAX_TOKENS", "4096")),
+        web_host=os.environ.get("MYRUFLO_WEB_HOST", "0.0.0.0"),
+        web_port=int(os.environ.get("MYRUFLO_WEB_PORT", "8080")),
+        web_secret_key=os.environ.get("WEB_SECRET_KEY", ""),
     )
     cfg.workspace.mkdir(parents=True, exist_ok=True)
     cfg.data_dir.mkdir(parents=True, exist_ok=True)

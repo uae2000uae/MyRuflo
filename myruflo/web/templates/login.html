@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Log in - MyRuflo{% endblock %}
+{% block content %}
+<div class="auth-page">
+    <div class="auth-card">
+        <div class="brand auth-brand">
+            <span class="brand-mark">MR</span>
+            <span class="brand-name">MyRuflo</span>
+        </div>
+        <h1>Welcome back</h1>
+        <p class="text-muted">Log in to chat with your agents.</p>
+        <form id="loginForm" class="auth-form">
+            <label>Email
+                <input type="email" name="email" required autocomplete="email" autofocus>
+            </label>
+            <label>Password
+                <input type="password" name="password" required autocomplete="current-password">
+            </label>
+            <p class="form-error" id="formError" hidden></p>
+            <button type="submit" class="btn btn-primary btn-block">Log in</button>
+        </form>
+        <p class="auth-switch">No account yet? <a href="/register">Register</a></p>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById("loginForm").addEventListener("submit", async function (event) {
+    event.preventDefault();
+    const errorEl = document.getElementById("formError");
+    errorEl.hidden = true;
+    const form = event.target;
+    const body = {
+        email: form.email.value,
+        password: form.password.value,
+    };
+    const response = await fetch("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        errorEl.textContent = data.detail || "Login failed.";
+        errorEl.hidden = false;
+        return;
+    }
+    const data = await response.json();
+    window.location.href = data.redirect || "/";
+});
+</script>
+{% endblock %}

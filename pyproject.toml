@@ -10,10 +10,15 @@ requires-python = ">=3.10"
 dependencies = [
     "anthropic>=0.40.0",
     "numpy>=1.24",
+    "fastapi>=0.115.0",
+    "uvicorn>=0.32.0",
+    "jinja2>=3.1.0",
+    "itsdangerous>=2.2.0",
 ]
 
 [project.optional-dependencies]
 gcp = ["google-cloud-secret-manager>=2.20.0"]
+dev = ["pytest", "httpx"]
 
 [project.scripts]
 myruflo = "myruflo.cli:main"

@@ -30,6 +30,8 @@ class Agent:
         llm: LLMClient,
         memory: MemoryStore,
         hooks: HooksManager,
+        *,
+        enabled_tools: set[str] | None = None,
     ) -> None:
         if role not in ROLES:
             raise ValueError(f"Unknown role '{role}'. Known roles: {sorted(ROLES)}")
@@ -38,6 +40,7 @@ class Agent:
         self.llm = llm
         self.memory = memory
         self.hooks = hooks
+        self._enabled_tools = enabled_tools
         self._tier, self._system_prompt = ROLES[role]
 
     def run(self, task: str, context: str = "") -> AgentResult:
@@ -47,7 +50,12 @@ class Agent:
         user_content = task if not context else f"{context}\n\n---\n\nYour task:\n{task}"
         messages: list[dict] = [{"role": "user", "content": user_content}]
 
-        tools = build_tool_schemas(include_shell=self.config.allow_shell, include_memory=True)
+        effective_allow_shell = self.config.allow_shell and (
+            self._enabled_tools is None or "run_shell" in self._enabled_tools
+        )
+        tools = build_tool_schemas(
+            include_shell=self.config.allow_shell, include_memory=True, enabled_tools=self._enabled_tools
+        )
         model = self.config.model_for_tier(self._tier)
 
         final_text = ""
@@ -75,7 +83,7 @@ class Agent:
                         call["name"],
                         call.get("input", {}),
                         workspace=self.config.workspace,
-                        allow_shell=self.config.allow_shell,
+                        allow_shell=effective_allow_shell,
                         memory=self.memory,
                     ),
                 }

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Memory - MyRuflo{% endblock %}
+{% block content %}
+<div class="page">
+    <header class="page-header">
+        <h1>Memory</h1>
+    </header>
+
+    <section class="card">
+        <h2>Namespaces</h2>
+        {% if namespaces %}
+        <div class="namespace-chips">
+            {% for ns in namespaces %}
+            <a class="chip {% if ns.name == selected_namespace %}chip-active{% endif %}"
+               href="/memory?namespace={{ ns.name }}&q={{ query }}">{{ ns.name }} ({{ ns.count }})</a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <p class="empty-hint">Nothing stored yet — memory fills up as agents complete tasks.</p>
+        {% endif %}
+    </section>
+
+    <section class="card">
+        <h2>Search</h2>
+        <form method="get" action="/memory" class="search-form">
+            <select name="namespace">
+                <option value="">Choose a namespace</option>
+                {% for ns in namespaces %}
+                <option value="{{ ns.name }}" {% if ns.name == selected_namespace %}selected{% endif %}>{{ ns.name }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="q" placeholder="Search query" value="{{ query }}">
+            <input type="number" name="top_k" min="1" max="20" value="{{ top_k }}" title="Top K results">
+            <button type="submit" class="btn btn-primary">Search</button>
+        </form>
+
+        {% if results %}
+        <ul class="memory-results">
+            {% for score, text in results %}
+            <li><span class="badge">{{ "%.3f"|format(score) }}</span> {{ text }}</li>
+            {% endfor %}
+        </ul>
+        {% elif selected_namespace and query %}
+        <p class="empty-hint">No matches.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

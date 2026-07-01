@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from myruflo.tools import file_ops, shell_ops
-from myruflo.tools.registry import execute_tool
+from myruflo.tools.registry import build_tool_schemas, execute_tool
 
 
 def test_write_then_read_round_trip(tmp_path: Path):
@@ -61,3 +61,16 @@ def test_registry_dispatches_read_file(tmp_path: Path):
 def test_registry_unknown_tool(tmp_path: Path):
     result = execute_tool("nonexistent", {}, workspace=tmp_path, allow_shell=False, memory=None)
     assert "unknown tool" in result
+
+
+def test_build_tool_schemas_without_enabled_tools_returns_everything():
+    schemas = build_tool_schemas(include_shell=True, include_memory=True)
+    names = {schema["name"] for schema in schemas}
+    assert "run_shell" in names
+    assert "memory_store" in names
+    assert "read_file" in names
+
+
+def test_build_tool_schemas_filters_by_enabled_tools():
+    schemas = build_tool_schemas(include_shell=True, include_memory=True, enabled_tools={"read_file"})
+    assert [schema["name"] for schema in schemas] == ["read_file"]

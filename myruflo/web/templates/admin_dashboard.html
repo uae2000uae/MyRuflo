@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Admin dashboard - MyRuflo{% endblock %}
+{% block content %}
+<div class="page">
+    <header class="page-header">
+        <h1>Admin dashboard</h1>
+        <nav class="page-tabs">
+            <a href="/admin" class="active">Dashboard</a>
+            <a href="/admin/tools">Tools</a>
+            <a href="/admin/users">Users</a>
+        </nav>
+    </header>
+
+    <div class="stat-grid">
+        <div class="stat-card">
+            <span class="stat-value">{{ stats.total_users }}</span>
+            <span class="stat-label">Total users</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-value">{{ stats.total_conversations }}</span>
+            <span class="stat-label">Conversations</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-value">{{ stats.tasks_today }}</span>
+            <span class="stat-label">Tasks today</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-value">{{ stats.tasks_7d }}</span>
+            <span class="stat-label">Tasks (7 days)</span>
+        </div>
+        <div class="stat-card">
+            <span class="stat-value">{{ stats.success_rate_7d ~ "%" if stats.success_rate_7d is not none else "—" }}</span>
+            <span class="stat-label">Success rate (7 days)</span>
+        </div>
+    </div>
+
+    <section class="card">
+        <h2>Recent activity</h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>When</th>
+                        <th>User</th>
+                        <th>Role</th>
+                        <th>Task</th>
+                        <th>Turns</th>
+                        <th>Result</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for run in recent %}
+                    <tr>
+                        <td>{{ run.created_at }}</td>
+                        <td>{{ run.user_name }}</td>
+                        <td><span class="badge">{{ run.agent_role }}</span></td>
+                        <td class="task-cell">{{ run.task_snippet }}</td>
+                        <td>{{ run.turns_used }}</td>
+                        <td>{% if run.success %}<span class="pill pill-success">ok</span>{% else %}<span class="pill pill-danger">failed</span>{% endif %}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="6" class="empty-hint">No activity yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}
