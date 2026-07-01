@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Callable
 
 from myruflo.agents.agent import Agent, AgentResult
 from myruflo.config import Config
@@ -17,6 +18,15 @@ from myruflo.llm.client import LLMClient
 from myruflo.memory.store import MemoryStore
 
 FULL_PIPELINE = ["researcher", "planner", "coder", "tester", "reviewer"]
+
+ROLE_STATUS = {
+    "generalist": "Thinking...",
+    "planner": "Planning the approach...",
+    "researcher": "Researching...",
+    "coder": "Writing code...",
+    "tester": "Testing the changes...",
+    "reviewer": "Reviewing the result...",
+}
 
 _ROUTES: list[tuple[re.Pattern, list[str]]] = [
     (re.compile(r"\b(security|vulnerab|audit|cve)\b", re.I), ["researcher", "reviewer"]),
@@ -75,14 +85,17 @@ class Orchestrator:
         *,
         enabled_tools: set[str] | None = None,
         image_attachments: list[dict] | None = None,
+        on_progress: Callable[[str], None] | None = None,
     ) -> SwarmReport:
         pipeline = choose_pipeline(task, force_swarm)
         report = SwarmReport(task=task, pipeline=pipeline)
 
         context = ""
         for role in pipeline:
+            if on_progress:
+                on_progress(ROLE_STATUS.get(role, f"Working as {role}..."))
             agent = Agent(role, self.config, self.llm, self.memory, self.hooks, enabled_tools=enabled_tools)
-            result = agent.run(task, context=context, image_attachments=image_attachments)
+            result = agent.run(task, context=context, image_attachments=image_attachments, on_progress=on_progress)
             report.results.append(result)
             handoff = f"[{role} said]:\n{result.final_text}"
             context = f"{context}\n\n{handoff}" if context else handoff

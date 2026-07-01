@@ -3,7 +3,8 @@
     if (!form) return;
 
     var messageList = document.getElementById("messageList");
-    var thinkingHint = document.getElementById("thinkingHint");
+    var statusLine = document.getElementById("statusLine");
+    var statusText = document.getElementById("statusText");
     var errorEl = document.getElementById("composerError");
     var sendBtn = document.getElementById("sendBtn");
     var textarea = form.querySelector("textarea[name='text']");
@@ -14,6 +15,34 @@
     var enhanceBtn = document.getElementById("enhanceBtn");
 
     var stagedFiles = [];
+    var statusPollTimer = null;
+
+    function setStatus(text) {
+        statusText.textContent = text;
+        statusLine.hidden = false;
+    }
+
+    function startStatusPolling() {
+        setStatus("Thinking about how to approach this…");
+        statusPollTimer = setInterval(async function () {
+            try {
+                var response = await fetch("/chat/" + conversationId + "/status");
+                if (!response.ok) return;
+                var data = await response.json();
+                if (data.status) setStatus(data.status);
+            } catch (err) {
+                // Ignore transient polling errors — the next tick will retry.
+            }
+        }, 1200);
+    }
+
+    function stopStatusPolling() {
+        if (statusPollTimer) {
+            clearInterval(statusPollTimer);
+            statusPollTimer = null;
+        }
+        statusLine.hidden = true;
+    }
 
     function scrollToBottom() {
         messageList.scrollTop = messageList.scrollHeight;
@@ -100,7 +129,7 @@
 
         errorEl.hidden = true;
         sendBtn.disabled = true;
-        thinkingHint.hidden = false;
+        startStatusPolling();
 
         // Optimistically show the user's message right away.
         var pending = document.createElement("div");
@@ -150,7 +179,7 @@
             renderStaging();
         } finally {
             sendBtn.disabled = false;
-            thinkingHint.hidden = true;
+            stopStatusPolling();
         }
     });
 })();

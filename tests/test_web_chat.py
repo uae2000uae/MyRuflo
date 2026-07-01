@@ -19,7 +19,7 @@ _TINY_PNG = base64.b64decode(
 )
 
 
-def _fake_run(self, task, force_swarm=None, *, enabled_tools=None, image_attachments=None):
+def _fake_run(self, task, force_swarm=None, *, enabled_tools=None, image_attachments=None, on_progress=None):
     return SwarmReport(
         task=task,
         pipeline=["generalist"],
@@ -84,7 +84,7 @@ def _new_conversation(client: TestClient) -> str:
 def test_uploading_a_text_file_is_inlined_and_recorded(client: TestClient, app_config: Config, monkeypatch):
     captured = {}
 
-    def fake_run(self, task, force_swarm=None, *, enabled_tools=None, image_attachments=None):
+    def fake_run(self, task, force_swarm=None, *, enabled_tools=None, image_attachments=None, on_progress=None):
         captured["task"] = task
         captured["image_attachments"] = image_attachments
         return SwarmReport(
@@ -122,7 +122,7 @@ def test_uploading_a_text_file_is_inlined_and_recorded(client: TestClient, app_c
 def test_uploading_an_image_becomes_a_vision_block(client: TestClient, monkeypatch):
     captured = {}
 
-    def fake_run(self, task, force_swarm=None, *, enabled_tools=None, image_attachments=None):
+    def fake_run(self, task, force_swarm=None, *, enabled_tools=None, image_attachments=None, on_progress=None):
         captured["image_attachments"] = image_attachments
         return SwarmReport(
             task=task,
@@ -173,6 +173,106 @@ def test_attachment_not_served_to_non_owner(client: TestClient, monkeypatch):
     register(client, "Bob", "bob@example.com")  # switches the active session to Bob
     response = client.get(f"/chat/{conversation_id}/attachments/1")
     assert response.status_code == 404
+
+
+def test_status_is_set_during_run_and_cleared_after(client: TestClient, app_config: Config, monkeypatch):
+    register(client, "Admin", "admin@example.com")
+    conversation_id = _new_conversation(client)
+    seen = {}
+
+    def fake_run(self, task, force_swarm=None, *, enabled_tools=None, image_attachments=None, on_progress=None):
+        if on_progress:
+            on_progress("Researching...")
+        conn2 = sqlite3.connect(app_config.app_db_path)
+        conn2.row_factory = sqlite3.Row
+        try:
+            row = conn2.execute("SELECT status FROM conversations WHERE id = ?", (conversation_id,)).fetchone()
+            seen["mid_run_status"] = row["status"]
+        finally:
+            conn2.close()
+        return SwarmReport(
+            task=task,
+            pipeline=["researcher"],
+            results=[AgentResult(role="researcher", task=task, final_text="ok", turns_used=1, transcript=[])],
+        )
+
+    monkeypatch.setattr(Orchestrator, "run", fake_run)
+
+    response = client.post(f"/chat/{conversation_id}/message", data={"text": "look into this", "mode": "auto"})
+    assert response.status_code == 200
+    assert seen["mid_run_status"] == "Researching..."
+
+    conn = sqlite3.connect(app_config.app_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        row = conn.execute("SELECT status FROM conversations WHERE id = ?", (conversation_id,)).fetchone()
+    finally:
+        conn.close()
+    assert row["status"] is None
+
+
+def test_status_endpoint_is_owner_scoped(client: TestClient):
+    register(client, "Admin", "admin@example.com")
+    conversation_id = _new_conversation(client)
+
+    response = client.get(f"/chat/{conversation_id}/status")
+    assert response.status_code == 200
+    assert response.json() == {"status": None}
+
+    register(client, "Bob", "bob@example.com")  # switches the active session to Bob
+    response = client.get(f"/chat/{conversation_id}/status")
+    assert response.status_code == 404
+
+
+def test_generated_files_are_recorded_and_downloadable(client: TestClient, app_config: Config, monkeypatch):
+    register(client, "Admin", "admin@example.com")
+    conversation_id = _new_conversation(client)
+
+    # Simulate the agent having already written this file via its write_file tool.
+    (app_config.workspace / "report.txt").write_text("generated content", encoding="utf-8")
+
+    def fake_run(self, task, force_swarm=None, *, enabled_tools=None, image_attachments=None, on_progress=None):
+        transcript = [
+            {
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "tool_use",
+                        "id": "call1",
+                        "name": "write_file",
+                        "input": {"path": "report.txt", "content": "generated content"},
+                    }
+                ],
+            }
+        ]
+        return SwarmReport(
+            task=task,
+            pipeline=["coder"],
+            results=[
+                AgentResult(
+                    role="coder", task=task, final_text="Done, see report.txt", turns_used=1, transcript=transcript
+                )
+            ],
+        )
+
+    monkeypatch.setattr(Orchestrator, "run", fake_run)
+
+    response = client.post(f"/chat/{conversation_id}/message", data={"text": "write a report", "mode": "auto"})
+    assert response.status_code == 200
+    assert "report.txt" in response.text
+
+    conn = sqlite3.connect(app_config.app_db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        atts = conn.execute("SELECT * FROM attachments WHERE kind = 'generated'").fetchall()
+    finally:
+        conn.close()
+    assert len(atts) == 1
+    assert atts[0]["filename"] == "report.txt"
+
+    download = client.get(f"/chat/{conversation_id}/attachments/{atts[0]['id']}")
+    assert download.status_code == 200
+    assert download.content == b"generated content"
 
 
 def test_enhance_endpoint_rewrites_prompt(client: TestClient, monkeypatch):

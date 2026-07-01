@@ -17,6 +17,13 @@
     </div>
     {% endif %}
     <div class="msg-bubble">{{ message.content }}</div>
+    {% if message.generated_files %}
+    <div class="attachment-list generated-files">
+        {% for att in message.generated_files %}
+        <a class="attachment-chip generated" href="/chat/{{ message.conversation_id }}/attachments/{{ att.id }}" download="{{ att.filename }}">⬇ {{ att.filename }}</a>
+        {% endfor %}
+    </div>
+    {% endif %}
 </div>
 {% else %}
 <p class="empty-hint">Send a message to start the conversation.</p>

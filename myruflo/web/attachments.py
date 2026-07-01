@@ -6,12 +6,19 @@ fed to the model beyond a note that they exist.
 from __future__ import annotations
 
 import base64
+import mimetypes
 import re
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import UploadFile
+
+from myruflo.tools.file_ops import WorkspaceViolation, resolve_in_workspace
+
+if TYPE_CHECKING:
+    from myruflo.agents.agent import AgentResult
 
 MAX_FILES_PER_MESSAGE = 5
 MAX_FILE_BYTES = 5 * 1024 * 1024  # 5 MB
@@ -19,6 +26,7 @@ MAX_INLINED_TEXT_CHARS = 20_000
 
 _IMAGE_CONTENT_TYPES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 _UNSAFE_CHARS = re.compile(r"[^A-Za-z0-9_.\-]")
+_WRITE_TOOL_NAMES = {"write_file", "edit_file"}
 
 
 class AttachmentError(ValueError):
@@ -112,3 +120,47 @@ def list_for_message(conn: sqlite3.Connection, message_id: int) -> list[sqlite3.
     return conn.execute(
         "SELECT * FROM attachments WHERE message_id = ? ORDER BY id", (message_id,)
     ).fetchall()
+
+
+def extract_generated_paths(results: list["AgentResult"]) -> list[str]:
+    """Scan agent transcripts for write_file/edit_file tool calls and return
+    the deduped workspace-relative paths they touched, in call order.
+    """
+    seen: list[str] = []
+    for result in results:
+        for message in result.transcript:
+            if message.get("role") != "assistant":
+                continue
+            for block in message.get("content", []) or []:
+                if not isinstance(block, dict) or block.get("type") != "tool_use":
+                    continue
+                if block.get("name") not in _WRITE_TOOL_NAMES:
+                    continue
+                path = block.get("input", {}).get("path")
+                if path and path not in seen:
+                    seen.append(path)
+    return seen
+
+
+def record_generated_files(
+    conn: sqlite3.Connection, message_id: int, workspace: Path, relative_paths: list[str]
+) -> None:
+    """Record files the agent wrote/edited during this run as downloadable
+    attachments on the assistant's reply.
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    for rel_path in relative_paths:
+        try:
+            resolved = resolve_in_workspace(workspace, rel_path)
+        except WorkspaceViolation:
+            continue
+        if not resolved.is_file():
+            continue
+        content_type, _ = mimetypes.guess_type(resolved.name)
+        conn.execute(
+            "INSERT INTO attachments "
+            "(message_id, filename, content_type, size_bytes, kind, stored_path, created_at) "
+            "VALUES (?, ?, ?, ?, 'generated', ?, ?)",
+            (message_id, resolved.name, content_type, resolved.stat().st_size, str(resolved), now),
+        )
+    conn.commit()

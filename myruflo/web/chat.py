@@ -51,9 +51,17 @@ def _load_messages(conn: sqlite3.Connection, conversation_id: int) -> list[dict]
     rows = conn.execute(
         "SELECT * FROM messages WHERE conversation_id = ? ORDER BY id", (conversation_id,)
     ).fetchall()
-    return [
-        {**dict(row), "attachments": attachments_module.list_for_message(conn, row["id"])} for row in rows
-    ]
+    messages = []
+    for row in rows:
+        atts = attachments_module.list_for_message(conn, row["id"])
+        messages.append(
+            {
+                **dict(row),
+                "attachments": [a for a in atts if a["kind"] != "generated"],
+                "generated_files": [a for a in atts if a["kind"] == "generated"],
+            }
+        )
+    return messages
 
 
 @router.get("/")
@@ -112,6 +120,18 @@ def get_attachment(
     return FileResponse(
         row["stored_path"], media_type=row["content_type"] or "application/octet-stream", filename=row["filename"]
     )
+
+
+@router.get("/chat/{conversation_id}/status")
+def get_status(
+    conversation_id: int,
+    user: sqlite3.Row = Depends(require_login),
+    conn: sqlite3.Connection = Depends(get_db),
+):
+    """Polled by the composer while a message is in flight, to drive a single
+    live status line instead of a static 'working on it' message."""
+    conversation = _get_owned_conversation(conn, conversation_id, user["id"])
+    return {"status": conversation["status"]}
 
 
 @router.post("/chat/{conversation_id}/enhance")
@@ -195,24 +215,40 @@ def post_message(
     hooks = HooksManager(config.hooks_log_path, memory)
     orchestrator = Orchestrator(config, llm, memory, hooks)
 
+    def _update_status(status_text: str) -> None:
+        conn.execute("UPDATE conversations SET status = ? WHERE id = ?", (status_text, conversation_id))
+        conn.commit()
+
     started = time.perf_counter()
     try:
         try:
             report = orchestrator.run(
-                task_text, force_swarm, enabled_tools=enabled_tools, image_attachments=image_blocks or None
+                task_text,
+                force_swarm,
+                enabled_tools=enabled_tools,
+                image_attachments=image_blocks or None,
+                on_progress=_update_status,
             )
         except Exception as exc:  # noqa: BLE001 - surface any LLM/agent failure as a clean chat error
             raise HTTPException(status_code=502, detail=f"The agent failed to respond: {exc}") from exc
     finally:
         memory.close()
+        conn.execute("UPDATE conversations SET status = NULL WHERE id = ?", (conversation_id,))
+        conn.commit()
     duration_ms = int((time.perf_counter() - started) * 1000)
 
     assistant_now = datetime.now(timezone.utc).isoformat()
-    conn.execute(
+    assistant_cursor = conn.execute(
         "INSERT INTO messages (conversation_id, role, content, pipeline, created_at) "
         "VALUES (?, 'assistant', ?, ?, ?)",
         (conversation_id, report.final_text, " -> ".join(report.pipeline), assistant_now),
     )
+    assistant_message_id = assistant_cursor.lastrowid
+
+    generated_paths = attachments_module.extract_generated_paths(report.results)
+    if generated_paths:
+        attachments_module.record_generated_files(conn, assistant_message_id, config.workspace, generated_paths)
+
     for result in report.results:
         conn.execute(
             "INSERT INTO task_runs "

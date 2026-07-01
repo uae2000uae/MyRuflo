@@ -4,6 +4,7 @@ Anthropic API, backed by workspace file/shell tools and the memory store.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Callable
 
 from myruflo.agents.roles import ROLES
 from myruflo.config import Config
@@ -44,7 +45,12 @@ class Agent:
         self._tier, self._system_prompt = ROLES[role]
 
     def run(
-        self, task: str, context: str = "", *, image_attachments: list[dict] | None = None
+        self,
+        task: str,
+        context: str = "",
+        *,
+        image_attachments: list[dict] | None = None,
+        on_progress: Callable[[str], None] | None = None,
     ) -> AgentResult:
         hint = self.hooks.pre_task(self.role, task)
         system = self._system_prompt if not hint else f"{self._system_prompt}\n\n{hint}"
@@ -79,6 +85,10 @@ class Agent:
 
             if not response.wants_tool_use:
                 break
+
+            if on_progress:
+                tool_names = ", ".join(sorted({call["name"] for call in response.tool_calls}))
+                on_progress(f"Using {tool_names}...")
 
             tool_results = [
                 {

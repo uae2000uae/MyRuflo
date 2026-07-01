@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
     title TEXT NOT NULL DEFAULT 'New conversation',
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    status TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_conversations_user ON conversations(user_id, created_at DESC);
 
@@ -85,12 +86,25 @@ def _connect(db_path: Path) -> sqlite3.Connection:
     return conn
 
 
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, coltype: str) -> None:
+    """Add a column to an existing table if it's missing. `CREATE TABLE IF NOT
+    EXISTS` only helps for brand-new databases; existing ones need this to
+    pick up columns added after they were first created — there's no formal
+    migration framework here, so this lightweight ALTER is it.
+    """
+    existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+    if column not in existing:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {coltype}")
+        conn.commit()
+
+
 def init_app_db(db_path: Path) -> None:
     """Create tables and seed tool_settings if missing. Safe to call on every startup."""
     conn = _connect(db_path)
     try:
         conn.executescript(SCHEMA)
         conn.commit()
+        _ensure_column(conn, "conversations", "status", "TEXT")
         tool_settings.seed_tool_settings(conn)
     finally:
         conn.close()
