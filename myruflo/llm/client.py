@@ -27,7 +27,7 @@ class LLMClient:
     def __init__(self, api_key: str) -> None:
         if not api_key:
             raise ValueError(
-                "ANTHROPIC_API_KEY is not set. Copy .env.example to .env and add your key."
+                "ANTHROPIC_AI_KEY is not set. Copy .env.example to .env and add your key."
             )
         self._client = anthropic.Anthropic(api_key=api_key)
 

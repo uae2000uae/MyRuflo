@@ -55,11 +55,11 @@ def _resolve_api_key() -> tuple[str, str]:
     env, env:MYRUFLO_EVL, env:ANTHROPIC_AI_KEY, secret-manager, unset.
 
     Resolution order:
-    1. ANTHROPIC_API_KEY env var — covers local `.env` files AND Cloud Run's
-       `--set-secrets=ANTHROPIC_API_KEY=MYRUFLO_EVL:latest`, which injects the
+    1. ANTHROPIC_AI_KEY env var — covers local `.env` files AND Cloud Run's
+       `--set-secrets=ANTHROPIC_AI_KEY=MYRUFLO_EVL:latest`, which injects the
        secret as a plain env var with zero extra code/dependency needed.
     2. MYRUFLO_EVL env var — some deployments bind the Secret Manager secret
-       under its own name instead of renaming it to ANTHROPIC_API_KEY (e.g.
+       under its own name instead of renaming it to ANTHROPIC_AI_KEY (e.g.
        `--set-secrets=MYRUFLO_EVL=MYRUFLO_EVL:latest`, or a secret reference
        set up by hand through the Cloud Run console, which defaults the env
        var name to match the secret name).
@@ -74,7 +74,7 @@ def _resolve_api_key() -> tuple[str, str]:
     Supporting multiple env var names directly means hosting setups don't
     have to rename anything on the Cloud Run side to work with this app.
     """
-    env_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    env_key = os.environ.get("ANTHROPIC_AI_KEY", "")
     if env_key:
         return env_key, "env"
 

@@ -3,6 +3,7 @@
   <component name="Black">
     <option name="enabledOnReformat" value="true" />
     <option name="pathToExecutable" value="C:\Users\shiha\AppData\Roaming\Python\Python312\Scripts\black.exe" />
+    <option name="sdkName" value="Python 3.13 (MyRuflo)" />
   </component>
   <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.13 (MyRuflo)" project-jdk-type="Python SDK" />
 </project>

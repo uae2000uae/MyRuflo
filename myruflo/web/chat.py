@@ -95,7 +95,7 @@ def post_message(
     llm: LLMClient | None = request.app.state.llm
     if llm is None:
         raise HTTPException(
-            status_code=500, detail="ANTHROPIC_API_KEY is not configured on the server — chat is unavailable."
+            status_code=500, detail="ANTHROPIC_AI_KEY is not configured on the server — chat is unavailable."
         )
 
     force_swarm = _MODE_TO_FORCE_SWARM.get(payload.mode, None)

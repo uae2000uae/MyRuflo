@@ -68,7 +68,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         print(".env already exists - leaving it alone")
     elif example_path.exists():
         env_path.write_text(example_path.read_text(encoding="utf-8"), encoding="utf-8")
-        print("Created .env from .env.example - add your ANTHROPIC_API_KEY")
+        print("Created .env from .env.example - add your ANTHROPIC_AI_KEY")
     else:
         print("No .env.example found here; run this from the MyRuflo project root")
 
@@ -84,7 +84,7 @@ def cmd_serve(args: argparse.Namespace) -> None:
 
     config = load_config()
     if not config.api_key:
-        print("WARNING: ANTHROPIC_API_KEY is not set - chat will be unavailable until it is.")
+        print("WARNING: ANTHROPIC_AI_KEY is not set - chat will be unavailable until it is.")
     app = create_app(config)
     port = int(os.environ.get("PORT", config.web_port))
     uvicorn.run(app, host=config.web_host, port=port)
@@ -104,10 +104,10 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     print(f"shell tool: {'enabled' if config.allow_shell else 'disabled'}")
 
     if config.api_key:
-        print(f"ANTHROPIC_API_KEY: set (source: {config.api_key_source})")
+        print(f"ANTHROPIC_AI_KEY: set (source: {config.api_key_source})")
     else:
         problems.append(
-            "ANTHROPIC_API_KEY is not set (copy .env.example to .env locally, "
+            "ANTHROPIC_AI_KEY is not set (copy .env.example to .env locally, "
             "or bind the MYRUFLO_EVL secret when hosting on GCP)"
         )
 
