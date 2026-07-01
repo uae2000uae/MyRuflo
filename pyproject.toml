@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "myruflo"
+version = "0.1.0"
+description = "MyRuflo — a standalone multi-agent AI tool powered directly by the Anthropic API."
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.40.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+gcp = ["google-cloud-secret-manager>=2.20.0"]
+
+[project.scripts]
+myruflo = "myruflo.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["myruflo*"]

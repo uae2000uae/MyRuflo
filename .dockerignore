@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.git/
+.gitignore
+.env
+data/
+workspace/*
+!workspace/.gitkeep
+tests/
+.pytest_cache/
+deploy/
+README.md
