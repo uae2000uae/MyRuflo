@@ -51,21 +51,32 @@ def _fetch_gcp_secret(project: str, secret_name: str) -> str | None:
 
 
 def _resolve_api_key() -> tuple[str, str]:
-    """Return (api_key, source) where source is one of: env, secret-manager, unset.
+    """Return (api_key, source) where source is one of:
+    env, env:MYRUFLO_EVL, secret-manager, unset.
 
     Resolution order:
     1. ANTHROPIC_API_KEY env var — covers local `.env` files AND Cloud Run's
        `--set-secrets=ANTHROPIC_API_KEY=MYRUFLO_EVL:latest`, which injects the
        secret as a plain env var with zero extra code/dependency needed.
-    2. Secret Manager, read directly via the API — for hosting setups where
-       the key isn't bound as an env var. Only attempted when a GCP project
-       is inferable (MYRUFLO_GCP_PROJECT, or GOOGLE_CLOUD_PROJECT which GCP
-       compute environments set automatically) and only if the
+    2. MYRUFLO_EVL env var — some deployments bind the Secret Manager secret
+       under its own name instead of renaming it to ANTHROPIC_API_KEY (e.g.
+       `--set-secrets=MYRUFLO_EVL=MYRUFLO_EVL:latest`, or a secret reference
+       set up by hand through the Cloud Run console, which defaults the env
+       var name to match the secret name). Support that directly so hosting
+       setups don't have to rename anything to work.
+    3. Secret Manager, read directly via the API — for hosting setups where
+       the key isn't bound as an env var at all. Only attempted when a GCP
+       project is inferable (MYRUFLO_GCP_PROJECT, or GOOGLE_CLOUD_PROJECT
+       which GCP compute environments set automatically) and only if the
        `google-cloud-secret-manager` package is installed.
     """
     env_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if env_key:
         return env_key, "env"
+
+    evl_key = os.environ.get("MYRUFLO_EVL", "")
+    if evl_key:
+        return evl_key, "env:MYRUFLO_EVL"
 
     project = os.environ.get("MYRUFLO_GCP_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT")
     if project:

@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
-# Build MyRuflo's container, push it to Artifact Registry, and deploy it as
-# a Cloud Run Job wired to the existing "MYRUFLO_EVL" Secret Manager secret.
+# Build MyRuflo's container, push it to Artifact Registry, and deploy both
+# Cloud Run shapes wired to the existing "MYRUFLO_EVL" Secret Manager secret:
+#   - myruflo-job: batch one-shot task runner (MYRUFLO_TASK env var per run)
+#   - myruflo:     the web UI (chat + admin panel), listening on $PORT
+# Both run the same image; docker/entrypoint.sh picks the mode based on
+# whether MYRUFLO_TASK is set.
 #
 # Assumes the secret already exists (this script never handles the raw key).
 # Usage: deploy/gcp/deploy.sh PROJECT_ID [REGION] [SECRET_NAME]
@@ -12,6 +16,7 @@ SECRET_NAME="${3:-MYRUFLO_EVL}"
 
 REPO="myruflo"
 JOB_NAME="myruflo-job"
+SERVICE_NAME="myruflo"
 SA_NAME="myruflo-runner"
 SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/myruflo:latest"
@@ -48,14 +53,45 @@ gcloud run jobs deploy "$JOB_NAME" \
   --max-retries=0 \
   --task-timeout=900
 
-gcloud run services update myruflo \
-  --region=us-central1 \
-  --set-env-vars=MYRUFLO_TASK="Deploy from GitHub"
+echo "==> Deploying Cloud Run Service: $SERVICE_NAME (web UI)"
+# The key is already bound on this service as a plain env var named
+# MYRUFLO_EVL (matching the Secret Manager secret's own name, the default
+# a hand-configured secret reference gets in the Cloud Run console) rather
+# than renamed to ANTHROPIC_API_KEY like the Job uses below. config.py's
+# _resolve_api_key() checks MYRUFLO_EVL as a fallback, so keep binding it
+# under that same name here rather than introducing a second, differently
+# named binding.
+# --set-env-vars replaces the full env var set on this revision, which also
+# clears out any stray MYRUFLO_TASK left over from earlier config — the new
+# dual-mode entrypoint would otherwise mistake this for a Job and never
+# start the web server.
+# --max-instances=1 --min-instances=1: the web UI's SQLite data (accounts,
+# chats, tool toggles) lives on local disk, which is neither shared across
+# instances nor durable across a fresh cold start. Pinning to exactly one
+# always-on instance keeps that data consistent while the revision is
+# running (it still resets on a new deploy). Revisit with a GCS-backed
+# volume or a real database if you need it to survive redeploys too.
+gcloud run deploy "$SERVICE_NAME" \
+  --image="$IMAGE" \
+  --region="$REGION" \
+  --service-account="$SA_EMAIL" \
+  --set-secrets="MYRUFLO_EVL=${SECRET_NAME}:latest" \
+  --set-env-vars="MYRUFLO_ALLOW_SHELL=false" \
+  --max-instances=1 \
+  --min-instances=1 \
+  --allow-unauthenticated \
+  --port=8080
 
+SERVICE_URL="$(gcloud run services describe "$SERVICE_NAME" --region="$REGION" --format='value(status.url)')"
 
 cat <<EOF
 
-Deployed. Run a task with:
+Deployed.
+
+Web UI: $SERVICE_URL
+(the first account registered there becomes the admin)
+
+Run a batch task on the Job with:
 
   gcloud run jobs execute $JOB_NAME --region=$REGION \\
     --update-env-vars="MYRUFLO_TASK=explain what this workspace does"
@@ -66,11 +102,16 @@ If your gcloud version doesn't support --update-env-vars on 'execute', do:
     --update-env-vars="MYRUFLO_TASK=explain what this workspace does"
   gcloud run jobs execute $JOB_NAME --region=$REGION
 
-Note: each execution starts from a clean container — there is no persistent
-disk by default, so /workspace and /data (memory + hooks log) reset every
-run. To persist them across executions, mount a GCS bucket as a volume, e.g.:
+Note: each Job execution starts from a clean container — there is no
+persistent disk by default, so /workspace and /data (memory + hooks log)
+reset every run. To persist them across executions, mount a GCS bucket as
+a volume, e.g.:
 
   gcloud run jobs update $JOB_NAME --region=$REGION \\
     --add-volume=name=data,type=cloud-storage,bucket=YOUR_BUCKET \\
     --add-volume-mount=volume=data,mount-path=/data
+
+The same --add-volume/--add-volume-mount flags work on
+'gcloud run services update $SERVICE_NAME' if you later want the web UI's
+data/app.db and data/memory.db to survive redeploys.
 EOF

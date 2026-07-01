@@ -1,9 +1,10 @@
-# MyRuflo — container image for GCP hosting (Cloud Run Jobs).
+# MyRuflo — container image for GCP hosting.
 #
-# Shaped as a one-shot task runner rather than an HTTP service: Cloud Run
-# Jobs execute the container to completion and don't require a listener on
-# $PORT, which fits this CLI tool's "run a task, print the result, exit"
-# nature far better than Cloud Run's request-serving Service type.
+# One image, two Cloud Run shapes, picked at runtime by docker/entrypoint.sh:
+#   - Cloud Run Job:     MYRUFLO_TASK is set -> runs one batch task and exits.
+#   - Cloud Run Service: MYRUFLO_TASK is unset -> runs `myruflo serve`, which
+#                         listens on $PORT (Cloud Run injects this; defaults
+#                         to 8080 otherwise).
 FROM python:3.12-slim
 
 WORKDIR /app

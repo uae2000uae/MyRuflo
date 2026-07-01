@@ -1,21 +1,22 @@
 #!/bin/sh
-# Cloud Run Jobs entrypoint. Reads the task from an env var rather than a
-# positional CLI arg so job executions can pass free-form text (spaces,
-# commas, quotes) via `--update-env-vars` without gcloud's comma-separated
-# --args escaping rules getting in the way.
+# Dual-mode entrypoint: the same image backs both the batch Cloud Run Job
+# and the Cloud Run Service running the web UI.
+#
+# - If MYRUFLO_TASK is set (Cloud Run Jobs, or `docker run -e MYRUFLO_TASK=...`),
+#   run the one-shot CLI task and exit — the historical Job behavior.
+# - Otherwise (Cloud Run Services, or a plain `docker run`), start the web
+#   server via `myruflo serve`, which listens on $PORT (Cloud Run sets this
+#   automatically; it defaults to 8080 otherwise).
 set -e
 
-if [ -z "${MYRUFLO_TASK:-}" ]; then
-    echo "ERROR: MYRUFLO_TASK env var must be set to the task description." >&2
-    echo "Example: gcloud run jobs execute myruflo-job --update-env-vars=MYRUFLO_TASK='explain this workspace'" >&2
-    exit 1
+if [ -n "${MYRUFLO_TASK:-}" ]; then
+    FLAGS=""
+    case "${MYRUFLO_FORCE_SWARM:-auto}" in
+        true) FLAGS="--swarm" ;;
+        false) FLAGS="--no-swarm" ;;
+        *) FLAGS="" ;;
+    esac
+    exec myruflo run $FLAGS "$MYRUFLO_TASK"
 fi
 
-FLAGS=""
-case "${MYRUFLO_FORCE_SWARM:-auto}" in
-    true) FLAGS="--swarm" ;;
-    false) FLAGS="--no-swarm" ;;
-    *) FLAGS="" ;;
-esac
-
-exec myruflo run $FLAGS "$MYRUFLO_TASK"
+exec myruflo serve

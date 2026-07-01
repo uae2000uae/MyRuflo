@@ -13,8 +13,27 @@ def test_env_var_wins_over_secret_manager(monkeypatch):
     assert source == "env"
 
 
+def test_myruflo_evl_env_var_used_when_anthropic_api_key_unset(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("MYRUFLO_EVL", "sk-from-myruflo-evl")
+
+    key, source = config_module._resolve_api_key()
+    assert key == "sk-from-myruflo-evl"
+    assert source == "env:MYRUFLO_EVL"
+
+
+def test_anthropic_api_key_wins_over_myruflo_evl(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-from-env")
+    monkeypatch.setenv("MYRUFLO_EVL", "sk-from-myruflo-evl")
+
+    key, source = config_module._resolve_api_key()
+    assert key == "sk-from-env"
+    assert source == "env"
+
+
 def test_falls_back_to_secret_manager_when_env_unset(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("MYRUFLO_EVL", raising=False)
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "some-project")
     monkeypatch.setattr(config_module, "_fetch_gcp_secret", lambda project, name: "sk-from-secret-manager")
 
@@ -25,6 +44,7 @@ def test_falls_back_to_secret_manager_when_env_unset(monkeypatch):
 
 def test_uses_custom_secret_name(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("MYRUFLO_EVL", raising=False)
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "some-project")
     monkeypatch.setenv("MYRUFLO_SECRET_NAME", "CUSTOM_SECRET")
 
@@ -44,6 +64,7 @@ def test_uses_custom_secret_name(monkeypatch):
 
 def test_unset_when_no_env_and_no_project(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("MYRUFLO_EVL", raising=False)
     monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
     monkeypatch.delenv("MYRUFLO_GCP_PROJECT", raising=False)
 
@@ -54,6 +75,7 @@ def test_unset_when_no_env_and_no_project(monkeypatch):
 
 def test_unset_when_secret_manager_fetch_fails(monkeypatch):
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("MYRUFLO_EVL", raising=False)
     monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "some-project")
     monkeypatch.setattr(config_module, "_fetch_gcp_secret", lambda *a, **k: None)
 

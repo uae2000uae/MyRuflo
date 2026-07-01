@@ -90,14 +90,17 @@ myruflo serve
 
 The Anthropic API key lives in Secret Manager as **`MYRUFLO_EVL`**, not in a committed `.env`. `myruflo/config.py` resolves the key in this order:
 
-1. **`ANTHROPIC_API_KEY` env var** — set locally via `.env`, or injected by Cloud Run's `--set-secrets=ANTHROPIC_API_KEY=MYRUFLO_EVL:latest` binding (this is what the deploy script below uses; no extra dependency needed for this path).
-2. **Direct Secret Manager read** — fallback for hosting setups that don't bind the secret as an env var. Only attempted when a GCP project is inferable (`GOOGLE_CLOUD_PROJECT`, which Cloud Run/GCE set automatically, or `MYRUFLO_GCP_PROJECT`) and the optional `google-cloud-secret-manager` package is installed (`pip install -e ".[gcp]"`).
+1. **`ANTHROPIC_API_KEY` env var** — set locally via `.env`, or injected by Cloud Run's `--set-secrets=ANTHROPIC_API_KEY=MYRUFLO_EVL:latest` binding. This is what the `myruflo-job` Job uses; no extra dependency needed for this path.
+2. **`MYRUFLO_EVL` env var** — for bindings that keep the secret's own name instead of renaming it to `ANTHROPIC_API_KEY` (e.g. `--set-secrets=MYRUFLO_EVL=MYRUFLO_EVL:latest`, or a secret reference added by hand through the Cloud Run console, which defaults the env var name to match the secret). This is what the `myruflo` web Service uses.
+3. **Direct Secret Manager read** — fallback for hosting setups that don't bind the secret as an env var at all. Only attempted when a GCP project is inferable (`GOOGLE_CLOUD_PROJECT`, which Cloud Run/GCE set automatically, or `MYRUFLO_GCP_PROJECT`) and the optional `google-cloud-secret-manager` package is installed (`pip install -e ".[gcp]"`).
 
-Run `myruflo doctor` to see which source supplied the key (`source: env` or `source: secret-manager`).
+Run `myruflo doctor` to see which source supplied the key (`source: env`, `source: env:MYRUFLO_EVL`, or `source: secret-manager`).
 
-### Why Cloud Run Jobs, not a Cloud Run Service
+### One image, two Cloud Run shapes
 
-MyRuflo is a "run a task, print the result, exit" CLI, not a request-serving API — so it's packaged as a **Cloud Run Job** (executes the container to completion, no HTTP listener required) rather than a Cloud Run Service. The container's `docker/entrypoint.sh` reads the task from a `MYRUFLO_TASK` env var instead of a CLI arg specifically so job executions can pass arbitrary free-form text without hitting gcloud's comma-separated `--args` escaping rules.
+The same container backs both a **Cloud Run Job** (`myruflo-job`, a "run a task, print the result, exit" batch runner) and a **Cloud Run Service** (`myruflo`, the web UI). `docker/entrypoint.sh` picks the mode at startup: if `MYRUFLO_TASK` is set it runs that one-shot CLI task and exits (the Job's behavior — reading the task from an env var rather than a CLI arg specifically so job executions can pass arbitrary free-form text without hitting gcloud's comma-separated `--args` escaping rules); otherwise it runs `myruflo serve`, which listens on `$PORT` for the Service.
+
+The web Service is pinned to `--max-instances=1 --min-instances=1`: its SQLite data (`data/app.db`, `data/memory.db`) lives on local disk, which is neither shared across instances nor durable past a cold start, so a single always-on instance keeps it consistent while running (it still resets on a new deploy — mount a GCS bucket as a volume, same as the Job below, if you need it to survive redeploys too).
 
 ### Deploy
 
@@ -108,7 +111,7 @@ deploy/gcp/deploy.sh YOUR_PROJECT_ID [REGION] [SECRET_NAME]
 # e.g. deploy/gcp/deploy.sh my-project us-central1 MYRUFLO_EVL
 ```
 
-This builds the image via Cloud Build, pushes it to Artifact Registry, creates a dedicated `myruflo-runner` service account with `roles/secretmanager.secretAccessor` on the secret, and deploys the `myruflo-job` Cloud Run Job.
+This builds the image via Cloud Build, pushes it to Artifact Registry, creates a dedicated `myruflo-runner` service account with `roles/secretmanager.secretAccessor` on the secret, and deploys both the `myruflo-job` Cloud Run Job and the `myruflo` Cloud Run Service (the web UI, publicly reachable — `--allow-unauthenticated` — since the app has its own login/admin-role access control).
 
 ### Run a task
 
