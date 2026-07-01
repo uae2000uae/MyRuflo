@@ -4,4 +4,5 @@
     <option name="enabledOnReformat" value="true" />
     <option name="pathToExecutable" value="C:\Users\shiha\AppData\Roaming\Python\Python312\Scripts\black.exe" />
   </component>
+  <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.13 (MyRuflo)" project-jdk-type="Python SDK" />
 </project>
