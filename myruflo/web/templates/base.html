@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}MyRuflo{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', path='css/theme.css') }}">
+    <link rel="stylesheet" href="/static/css/theme.css">
     <script>
         (function () {
             var saved = localStorage.getItem("myruflo-theme");
@@ -60,7 +60,7 @@
         {% block content %}{% endblock %}
     </main>
 </div>
-<script src="{{ url_for('static', path='js/theme.js') }}"></script>
+<script src="/static/js/theme.js"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
