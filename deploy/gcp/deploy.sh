@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Build MyRuflo's container, push it to Artifact Registry, and deploy both
-# Cloud Run shapes wired to the existing "MYRUFLO_EVL" Secret Manager secret:
+# Cloud Run shapes wired to the existing "ANTHROPIC_AI_KEY" Secret Manager
+# secret:
 #   - myruflo-job: batch one-shot task runner (MYRUFLO_TASK env var per run)
 #   - myruflo:     the web UI (chat + admin panel), listening on $PORT
 # Both run the same image; docker/entrypoint.sh picks the mode based on
@@ -12,7 +13,7 @@ set -euo pipefail
 
 PROJECT_ID="${1:?Usage: deploy.sh PROJECT_ID [REGION] [SECRET_NAME]}"
 REGION="${2:-us-central1}"
-SECRET_NAME="${3:-MYRUFLO_EVL}"
+SECRET_NAME="${3:-ANTHROPIC_AI_KEY}"
 
 REPO="myruflo"
 JOB_NAME="myruflo-job"
@@ -48,14 +49,14 @@ gcloud run jobs deploy "$JOB_NAME" \
   --image="$IMAGE" \
   --region="$REGION" \
   --service-account="$SA_EMAIL" \
-  --set-secrets="ANTHROPIC_AI_KEY=${SECRET_NAME}:latest" \
+  --set-secrets="ANTHROPIC_API_KEY=${SECRET_NAME}:latest" \
   --set-env-vars="MYRUFLO_ALLOW_SHELL=false" \
   --max-retries=0 \
   --task-timeout=900
 
 echo "==> Deploying Cloud Run Service: $SERVICE_NAME (web UI)"
 # The key is bound on this service as a plain env var named ANTHROPIC_AI_KEY
-# (not renamed to ANTHROPIC_AI_KEY like the Job uses below). config.py's
+# (not the standard ANTHROPIC_API_KEY name the Job uses above). config.py's
 # _resolve_api_key() checks ANTHROPIC_AI_KEY as a fallback, so keep binding
 # it under that same name here rather than reverting it to a different one
 # on the next deploy.

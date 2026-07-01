@@ -88,7 +88,7 @@ def _resolve_api_key() -> tuple[str, str]:
 
     project = os.environ.get("MYRUFLO_GCP_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT")
     if project:
-        secret_name = os.environ.get("MYRUFLO_SECRET_NAME", "MYRUFLO_EVL")
+        secret_name = os.environ.get("MYRUFLO_SECRET_NAME", "ANTHROPIC_AI_KEY")
         fetched = _fetch_gcp_secret(project, secret_name)
         if fetched:
             return fetched, "secret-manager"

@@ -88,11 +88,11 @@ myruflo serve
 
 ## Hosting on GCP
 
-The Anthropic API key lives in Secret Manager as **`MYRUFLO_EVL`**, not in a committed `.env`. `myruflo/config.py` resolves the key in this order:
+The Anthropic API key lives in Secret Manager as **`ANTHROPIC_AI_KEY`**, not in a committed `.env`. `myruflo/config.py` resolves the key in this order:
 
-1. **`ANTHROPIC_API_KEY` env var** — set locally via `.env`, or injected by Cloud Run's `--set-secrets=ANTHROPIC_API_KEY=MYRUFLO_EVL:latest` binding. This is what the `myruflo-job` Job uses; no extra dependency needed for this path.
-2. **`MYRUFLO_EVL` env var** — for bindings that keep the secret's own name instead of renaming it (e.g. `--set-secrets=MYRUFLO_EVL=MYRUFLO_EVL:latest`, or a secret reference added by hand through the Cloud Run console, which defaults the env var name to match the secret).
-3. **`ANTHROPIC_AI_KEY` env var** — the name currently used on the `myruflo` web Service's secret binding (`--set-secrets=ANTHROPIC_AI_KEY=MYRUFLO_EVL:latest`).
+1. **`ANTHROPIC_API_KEY` env var** — set locally via `.env`, or injected by Cloud Run's `--set-secrets=ANTHROPIC_API_KEY=ANTHROPIC_AI_KEY:latest` binding. This is what the `myruflo-job` Job uses; no extra dependency needed for this path.
+2. **`MYRUFLO_EVL` env var** — historical fallback name, kept for compatibility with any deployment still binding the key under that name.
+3. **`ANTHROPIC_AI_KEY` env var** — the name currently used on the `myruflo` web Service's secret binding (`--set-secrets=ANTHROPIC_AI_KEY=ANTHROPIC_AI_KEY:latest`).
 4. **Direct Secret Manager read** — fallback for hosting setups that don't bind the secret as an env var at all. Only attempted when a GCP project is inferable (`GOOGLE_CLOUD_PROJECT`, which Cloud Run/GCE set automatically, or `MYRUFLO_GCP_PROJECT`) and the optional `google-cloud-secret-manager` package is installed (`pip install -e ".[gcp]"`).
 
 Run `myruflo doctor` to see which source supplied the key (`source: env`, `source: env:MYRUFLO_EVL`, `source: env:ANTHROPIC_AI_KEY`, or `source: secret-manager`).
@@ -105,11 +105,11 @@ The web Service is pinned to `--max-instances=1 --min-instances=1`: its SQLite d
 
 ### Deploy
 
-Requires the `gcloud` CLI, a GCP project with billing enabled, and the `MYRUFLO_EVL` secret already created in Secret Manager (this script only grants access to it — it never touches the plaintext key).
+Requires the `gcloud` CLI, a GCP project with billing enabled, and the `ANTHROPIC_AI_KEY` secret already created in Secret Manager (this script only grants access to it — it never touches the plaintext key).
 
 ```bash
 deploy/gcp/deploy.sh YOUR_PROJECT_ID [REGION] [SECRET_NAME]
-# e.g. deploy/gcp/deploy.sh my-project us-central1 MYRUFLO_EVL
+# e.g. deploy/gcp/deploy.sh myruflo us-central1 ANTHROPIC_AI_KEY
 ```
 
 This builds the image via Cloud Build, pushes it to Artifact Registry, creates a dedicated `myruflo-runner` service account with `roles/secretmanager.secretAccessor` on the secret, and deploys both the `myruflo-job` Cloud Run Job and the `myruflo` Cloud Run Service (the web UI, publicly reachable — `--allow-unauthenticated` — since the app has its own login/admin-role access control).
