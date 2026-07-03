@@ -7,6 +7,11 @@
 # - Otherwise (Cloud Run Services, or a plain `docker run`), start the web
 #   server via `myruflo serve`, which listens on $PORT (Cloud Run sets this
 #   automatically; it defaults to 8080 otherwise).
+#
+# Cloud persistence: when LITESTREAM_BUCKET is set, the SQLite databases
+# (accounts/logins/conversations in app.db, agent memory in memory.db) are
+# restored from the GCS bucket at startup and continuously replicated back
+# while the process runs — so data survives redeploys and cold starts.
 set -e
 
 if [ -n "${MYRUFLO_TASK:-}" ]; then
@@ -16,7 +21,19 @@ if [ -n "${MYRUFLO_TASK:-}" ]; then
         false) FLAGS="--no-swarm" ;;
         *) FLAGS="" ;;
     esac
-    exec myruflo run $FLAGS "$MYRUFLO_TASK"
+    CMD="myruflo run $FLAGS \"\$MYRUFLO_TASK\""
+    if [ -n "${LITESTREAM_BUCKET:-}" ]; then
+        litestream restore -if-replica-exists -if-db-not-exists /data/app.db
+        litestream restore -if-replica-exists -if-db-not-exists /data/memory.db
+        exec litestream replicate -exec "sh -c '$CMD'"
+    fi
+    exec sh -c "$CMD"
+fi
+
+if [ -n "${LITESTREAM_BUCKET:-}" ]; then
+    litestream restore -if-replica-exists -if-db-not-exists /data/app.db
+    litestream restore -if-replica-exists -if-db-not-exists /data/memory.db
+    exec litestream replicate -exec "myruflo serve"
 fi
 
 exec myruflo serve

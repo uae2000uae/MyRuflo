@@ -1,0 +1,19 @@
+# Litestream configuration: continuously replicate the app's SQLite
+# databases to a GCS bucket so accounts/conversations/memory survive
+# redeploys and cold starts on Cloud Run.
+#
+# The bucket comes from the LITESTREAM_BUCKET env var (set by
+# deploy/gcp/deploy.sh). Auth uses Application Default Credentials — on
+# Cloud Run that's the myruflo-runner service account automatically.
+dbs:
+  - path: /data/app.db      # web UI: users, logins, conversations, settings
+    replicas:
+      - type: gcs
+        bucket: ${LITESTREAM_BUCKET}
+        path: app.db
+
+  - path: /data/memory.db   # agent memory store
+    replicas:
+      - type: gcs
+        bucket: ${LITESTREAM_BUCKET}
+        path: memory.db

@@ -21,6 +21,9 @@ SERVICE_NAME="myruflo"
 SA_NAME="myruflo-runner"
 SA_EMAIL="${SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/myruflo:latest"
+# GCS bucket for Litestream: accounts/logins/conversations (app.db) and agent
+# memory (memory.db) are continuously replicated here and restored on boot.
+DATA_BUCKET="${PROJECT_ID}-myruflo-data"
 
 echo "==> Project: $PROJECT_ID  Region: $REGION  Secret: $SECRET_NAME"
 gcloud config set project "$PROJECT_ID" >/dev/null
@@ -57,13 +60,21 @@ for PLATFORM_SECRET in OPENAI_API_KEY GEMINI_API_KEY GOOGLE_API_KEY XAI_API_KEY 
   fi
 done
 
+echo "==> Ensuring the data bucket exists (persistent logins/accounts/memory)"
+gcloud storage buckets describe "gs://${DATA_BUCKET}" >/dev/null 2>&1 || \
+  gcloud storage buckets create "gs://${DATA_BUCKET}" \
+    --location="$REGION" --uniform-bucket-level-access
+gcloud storage buckets add-iam-policy-binding "gs://${DATA_BUCKET}" \
+  --member="serviceAccount:${SA_EMAIL}" \
+  --role="roles/storage.objectAdmin" >/dev/null
+
 echo "==> Deploying Cloud Run Job: $JOB_NAME"
 gcloud run jobs deploy "$JOB_NAME" \
   --image="$IMAGE" \
   --region="$REGION" \
   --service-account="$SA_EMAIL" \
   --set-secrets="ANTHROPIC_API_KEY=${SECRET_NAME}:latest" \
-  --set-env-vars="MYRUFLO_ALLOW_SHELL=false" \
+  --set-env-vars="MYRUFLO_ALLOW_SHELL=false,LITESTREAM_BUCKET=${DATA_BUCKET}" \
   --max-retries=0 \
   --task-timeout=900
 
@@ -88,7 +99,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --region="$REGION" \
   --service-account="$SA_EMAIL" \
   --set-secrets="ANTHROPIC_AI_KEY=${SECRET_NAME}:latest" \
-  --set-env-vars="MYRUFLO_ALLOW_SHELL=false" \
+  --set-env-vars="MYRUFLO_ALLOW_SHELL=false,LITESTREAM_BUCKET=${DATA_BUCKET}" \
   --max-instances=1 \
   --min-instances=1 \
   --allow-unauthenticated \
@@ -114,16 +125,10 @@ If your gcloud version doesn't support --update-env-vars on 'execute', do:
     --update-env-vars="MYRUFLO_TASK=explain what this workspace does"
   gcloud run jobs execute $JOB_NAME --region=$REGION
 
-Note: each Job execution starts from a clean container — there is no
-persistent disk by default, so /workspace and /data (memory + hooks log)
-reset every run. To persist them across executions, mount a GCS bucket as
-a volume, e.g.:
-
-  gcloud run jobs update $JOB_NAME --region=$REGION \\
-    --add-volume=name=data,type=cloud-storage,bucket=YOUR_BUCKET \\
-    --add-volume-mount=volume=data,mount-path=/data
-
-The same --add-volume/--add-volume-mount flags work on
-'gcloud run services update $SERVICE_NAME' if you later want the web UI's
-data/app.db and data/memory.db to survive redeploys.
+Persistence: accounts/logins/conversations (app.db) and agent memory
+(memory.db) are continuously replicated by Litestream to
+gs://$DATA_BUCKET and restored automatically at startup — they survive
+redeploys, crashes, and cold starts on both the Service and the Job.
+/workspace and the hooks log remain ephemeral; mount a GCS volume
+(--add-volume/--add-volume-mount) if you ever need those to persist too.
 EOF

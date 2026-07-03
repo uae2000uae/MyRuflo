@@ -129,7 +129,9 @@ Create a secret per platform you want enabled (e.g. `gcloud secrets create OPENA
 
 The same container backs both a **Cloud Run Job** (`myruflo-job`, a "run a task, print the result, exit" batch runner) and a **Cloud Run Service** (`myruflo`, the web UI). `docker/entrypoint.sh` picks the mode at startup: if `MYRUFLO_TASK` is set it runs that one-shot CLI task and exits (the Job's behavior — reading the task from an env var rather than a CLI arg specifically so job executions can pass arbitrary free-form text without hitting gcloud's comma-separated `--args` escaping rules); otherwise it runs `myruflo serve`, which listens on `$PORT` for the Service.
 
-The web Service is pinned to `--max-instances=1 --min-instances=1`: its SQLite data (`data/app.db`, `data/memory.db`) lives on local disk, which is neither shared across instances nor durable past a cold start, so a single always-on instance keeps it consistent while running (it still resets on a new deploy — mount a GCS bucket as a volume, same as the Job below, if you need it to survive redeploys too).
+The web Service is pinned to `--max-instances=1 --min-instances=1`: its SQLite data (`data/app.db`, `data/memory.db`) lives on local disk, and a single always-on instance keeps it consistent while running.
+
+**Cloud persistence (logins, accounts, conversations, memory)**: the image ships [Litestream](https://litestream.io), which continuously replicates `app.db` (users/logins/conversations/settings) and `memory.db` (agent memory) to a GCS bucket and restores them at startup. `deploy.sh` creates the bucket (`<project>-myruflo-data`), grants the runner access, and sets `LITESTREAM_BUCKET` on both the Service and the Job — so accounts survive redeploys, crashes, and cold starts with no further setup. Unset `LITESTREAM_BUCKET` to disable. (`workspace/` files and `hooks.jsonl` stay ephemeral; mount a GCS volume if you need those too.)
 
 ### Deploy
 
