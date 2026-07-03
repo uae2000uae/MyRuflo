@@ -56,18 +56,21 @@
                         </td>
                         <td>
                             <input type="text" id="secret-{{ p.name }}" value="{{ p.secret_id }}"
+                                   data-saved="{{ p.secret_id }}"
                                    placeholder="{{ p.default_secret_ids }}"
+                                   oninput="updateSaveButton('{{ p.name }}')"
                                    style="width: 100%; min-width: 180px;" autocomplete="off" spellcheck="false">
                         </td>
                         <td>
                             <span id="test-{{ p.name }}" class="empty-hint">—</span>
                         </td>
                         <td style="white-space: nowrap;">
-                            <button type="button" class="btn btn-secondary" onclick="savePlatform('{{ p.name }}')">
-                                Save &amp; activate
+                            <button type="button" id="save-{{ p.name }}" class="btn btn-secondary" disabled
+                                    onclick="savePlatform('{{ p.name }}')">
+                                Archived
                             </button>
                             <button type="button" class="btn btn-secondary" onclick="testPlatform('{{ p.name }}')">
-                                Test
+                                Refresh
                             </button>
                         </td>
                     </tr>
@@ -91,8 +94,17 @@ function esc(text) {
     return div.innerHTML;
 }
 
+function updateSaveButton(name) {
+    const input = document.getElementById("secret-" + name);
+    const button = document.getElementById("save-" + name);
+    const edited = input.value.trim() !== (input.dataset.saved || "").trim();
+    button.disabled = !edited;
+    button.textContent = edited ? "Save" : "Archived";
+}
+
 async function savePlatform(name) {
-    const secretId = document.getElementById("secret-" + name).value.trim();
+    const input = document.getElementById("secret-" + name);
+    const secretId = input.value.trim();
     setStatus(name, '<span class="empty-hint">activating…</span>');
     setTest(name, "—");
     try {
@@ -107,6 +119,8 @@ async function savePlatform(name) {
         if (data.error) {
             setTest(name, '<span class="pill pill-danger">error</span> <span class="empty-hint">' + esc(data.error) + "</span>");
         }
+        input.dataset.saved = secretId;   // saved -> button returns to "Archived"
+        updateSaveButton(name);
     } catch (err) {
         setStatus(name, '<span class="pill pill-danger">request failed</span> <span class="empty-hint">' + esc(String(err)) + "</span>");
     }
