@@ -64,7 +64,10 @@ def test_unreadable_secret_reports_error_and_keeps_platform_off(monkeypatch):
     monkeypatch.setattr(platform_settings, "_fetch_gcp_secret", lambda project, name: None)
     config = Config(api_key="sk-ant", provider_keys={"anthropic": ("sk-ant", "env")})
     keys, errors = platform_settings.resolve_overridden_keys(config, {"mistral": "missing-secret"})
-    assert "mistral" in errors and "missing-secret" in errors["mistral"]
+    assert "mistral" in errors
+    # message names the unreadable secret, or the environment gap (missing
+    # google-cloud-secret-manager package) that prevented the lookup entirely
+    assert "missing-secret" in errors["mistral"] or "google-cloud-secret-manager" in errors["mistral"]
     assert "mistral" not in keys or keys["mistral"][0] == ""
 
 
@@ -90,6 +93,47 @@ def test_build_router_with_overrides_activates_platform(monkeypatch):
     assert router is not None
     assert set(router.providers) == {"anthropic", "deepseek"}
     assert router.providers["deepseek"].key_source == "secret-manager:ds-secret (admin)"
+
+
+def test_refresh_picks_up_secret_added_after_startup(monkeypatch):
+    """The exact 'I added my key to the secret, Test must find it' flow:
+    the key didn't exist at startup, gets a version later, and a refresh
+    rebuild activates the platform with no restart."""
+    import myruflo.config as config_module
+
+    monkeypatch.setenv("MYRUFLO_GCP_PROJECT", "my-proj")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-env")
+    for var in ("OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "XAI_API_KEY",
+                "GROK_API_KEY", "DEEPSEEK_API_KEY", "MISTRAL_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
+
+    secrets: dict[str, str] = {}  # Secret Manager contents, mutable
+    monkeypatch.setattr(config_module, "_fetch_gcp_secret", lambda p, n: secrets.get(n))
+    monkeypatch.setattr(platform_settings, "_fetch_gcp_secret", lambda p, n: secrets.get(n))
+
+    conn = _conn()
+    config = Config(api_key="sk-ant-env", provider_keys=config_module._resolve_provider_keys())
+
+    router, _ = platform_settings.build_router_with_overrides(config, conn)
+    assert "openai" not in router.providers  # nothing there at startup
+
+    secrets["OPENAI_API_KEY"] = "sk-real-key-added-later"  # user adds the version
+
+    router, errors = platform_settings.build_router_with_overrides(config, conn, refresh=True)
+    assert errors == {}
+    assert "openai" in router.providers
+    assert router.providers["openai"].key_source == "secret-manager:OPENAI_API_KEY"
+    assert "anthropic" in router.providers  # untouched
+
+
+def test_secret_manager_status_messages(monkeypatch):
+    monkeypatch.delenv("MYRUFLO_GCP_PROJECT", raising=False)
+    monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+    assert "GCP project" in platform_settings.secret_manager_status()
+    monkeypatch.setenv("MYRUFLO_GCP_PROJECT", "my-proj")
+    # with a project set, the answer depends on whether the SM package exists
+    status = platform_settings.secret_manager_status()
+    assert status is None or "google-cloud-secret-manager" in status
 
 
 class _FakeClient:

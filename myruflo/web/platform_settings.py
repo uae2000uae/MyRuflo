@@ -25,6 +25,32 @@ def gcp_project() -> str:
     return os.environ.get("MYRUFLO_GCP_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT") or ""
 
 
+def secret_manager_status() -> str | None:
+    """Human-readable reason Secret Manager is unreachable, or None if usable."""
+    if not gcp_project():
+        return (
+            "No GCP project detected — add MYRUFLO_GCP_PROJECT=<project-id> to .env "
+            "(set automatically on Cloud Run)."
+        )
+    try:
+        from google.cloud import secretmanager  # noqa: F401
+    except ImportError:
+        return (
+            "The google-cloud-secret-manager package is not installed — run: "
+            'pip install -e ".[gcp]" (or pip install google-cloud-secret-manager).'
+        )
+    return None
+
+
+def refresh_provider_keys(config: Config) -> None:
+    """Re-resolve every platform key from env vars and Secret Manager *now*,
+    replacing the snapshot taken at startup. This is what lets a newly added
+    secret version be picked up automatically without a restart."""
+    from myruflo import config as config_module
+
+    config.provider_keys = config_module._resolve_provider_keys()
+
+
 def load_secret_ids(conn: sqlite3.Connection) -> dict[str, str]:
     rows = conn.execute("SELECT provider, secret_id FROM platform_settings").fetchall()
     return {row["provider"]: row["secret_id"] for row in rows if row["secret_id"]}
@@ -72,20 +98,29 @@ def resolve_overridden_keys(
         if fetched:
             keys[name] = (fetched, f"secret-manager:{secret_id} (admin)")
         else:
-            errors[name] = (
+            errors[name] = secret_manager_status() or (
                 f"Could not read secret '{secret_id}' from project '{project}' — "
-                "check the secret exists, the runner has secretmanager.secretAccessor, "
-                "and google-cloud-secret-manager is installed."
+                "check the secret exists and has a version, the account has "
+                "secretmanager.secretAccessor (locally: run "
+                "'gcloud auth application-default login')."
             )
     return keys, errors
 
 
-def build_router_with_overrides(config: Config, conn: sqlite3.Connection):
+def build_router_with_overrides(config: Config, conn: sqlite3.Connection, *, refresh: bool = False):
     """Rebuild the LLM router with admin-set secret IDs applied.
 
-    Returns (router | None, errors). Never raises.
+    With ``refresh=True``, every platform key is re-resolved from env vars and
+    Secret Manager first — so keys added or rotated after startup are picked
+    up automatically. Returns (router | None, errors). Never raises.
     """
     from myruflo.llm.router import build_router
+
+    if refresh:
+        try:
+            refresh_provider_keys(config)
+        except Exception:  # noqa: BLE001 - a failed refresh keeps the old snapshot
+            pass
 
     try:
         secret_ids = load_secret_ids(conn)

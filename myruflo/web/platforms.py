@@ -18,9 +18,9 @@ from myruflo.web.templating import base_context, templates
 router = APIRouter(prefix="/admin/platforms")
 
 
-def _rebuild_router(request: Request, conn: sqlite3.Connection):
+def _rebuild_router(request: Request, conn: sqlite3.Connection, *, refresh: bool = True):
     config = request.app.state.config
-    new_router, errors = platform_settings.build_router_with_overrides(config, conn)
+    new_router, errors = platform_settings.build_router_with_overrides(config, conn, refresh=refresh)
     request.app.state.router = new_router
     # Keep the legacy default client in sync so chat works even without an
     # Anthropic env key.
@@ -92,10 +92,16 @@ def test_connectivity(
     current_router = getattr(request.app.state, "router", None)
     handle = current_router.providers.get(provider) if current_router is not None else None
     if handle is None:
-        return {
-            "ok": False,
-            "latency_ms": 0,
-            "model": "",
-            "message": "Platform is not active — save a working secret ID (or set its API key) first.",
-        }
+        # The key may have been added/rotated after startup — re-resolve from
+        # env + Secret Manager right now and try again before giving up.
+        new_router, errors = _rebuild_router(request, conn, refresh=True)
+        handle = new_router.providers.get(provider) if new_router is not None else None
+        if handle is None:
+            reason = (
+                errors.get(provider)
+                or platform_settings.secret_manager_status()
+                or "no API key found in env vars or Secret Manager for this platform "
+                "(check the secret has a real version, not a placeholder name mismatch)."
+            )
+            return {"ok": False, "latency_ms": 0, "model": "", "message": f"Platform is not active — {reason}"}
     return platform_settings.ping_provider(handle)
