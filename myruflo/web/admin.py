@@ -54,8 +54,12 @@ def dashboard(
         "tasks_7d": tasks_7d,
         "success_rate_7d": success_rate_7d,
     }
+    router_obj = getattr(request.app.state, "router", None)
+    platforms = router_obj.describe() if router_obj is not None else []
     return templates.TemplateResponse(
-        request, "admin_dashboard.html", base_context(user, conn, stats=stats, recent=recent)
+        request,
+        "admin_dashboard.html",
+        base_context(user, conn, stats=stats, recent=recent, platforms=platforms),
     )
 
 

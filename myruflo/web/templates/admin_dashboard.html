@@ -6,6 +6,7 @@
         <h1>Admin dashboard</h1>
         <nav class="page-tabs">
             <a href="/admin" class="active">Dashboard</a>
+            <a href="/admin/platforms">Platforms</a>
             <a href="/admin/tools">Tools</a>
             <a href="/admin/users">Users</a>
         </nav>
@@ -33,6 +34,36 @@
             <span class="stat-label">Success rate (7 days)</span>
         </div>
     </div>
+
+    <section class="card">
+        <h2>AI platforms</h2>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Platform</th>
+                        <th>Status</th>
+                        <th>Fast model</th>
+                        <th>Default model</th>
+                        <th>Heavy model</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in platforms %}
+                    <tr>
+                        <td>{{ p.label }}</td>
+                        <td><span class="pill pill-success">configured</span> <span class="empty-hint">({{ p.key_source }})</span></td>
+                        <td>{{ p.models.fast }}</td>
+                        <td>{{ p.models.default }}</td>
+                        <td>{{ p.models.heavy }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="5" class="empty-hint">No AI platform configured — set an API key in .env.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
 
     <section class="card">
         <h2>Recent activity</h2>

@@ -1,6 +1,6 @@
 # MyRuflo
 
-A standalone, multi-agent AI tool that talks directly to the Anthropic API — no Claude Code, no Node, no external harness required. It's a from-scratch Python rewrite inspired by [ruflo](https://github.com/ruvnet/claude-flow)'s agent/swarm/memory ideas, built to run as its own independent project.
+A standalone, multi-agent AI tool that talks directly to AI platform APIs — no Claude Code, no Node, no external harness required. It's a from-scratch Python rewrite inspired by [ruflo](https://github.com/ruvnet/claude-flow)'s agent/swarm/memory ideas, built to run as its own independent project.
 
 ## What it does
 
@@ -8,6 +8,7 @@ Give it a task in plain English and it decides how to handle it:
 
 - **Simple tasks** run through a single generalist agent.
 - **Complex tasks** (bug fixes, features, refactors, security reviews, ...) get routed through a pipeline of specialist agents — `researcher -> planner -> coder -> tester -> reviewer` — each handing its findings to the next.
+- **Multi-platform routing**: each step is sent to the best AI platform for the job. A fast, cheap model classifies the task (type + complexity), then a routing table picks among every platform you've configured — Anthropic (Claude), OpenAI (GPT), Google Gemini, xAI (Grok), DeepSeek, and Mistral. Missing API keys narrow the choice gracefully; with only `ANTHROPIC_API_KEY` set, everything runs on Claude exactly as before.
 
 Every agent can read/write files, search the workspace (glob/grep), optionally run shell commands, and read/write a persistent memory store. A lightweight hooks system logs every task and turns successful outcomes into "lessons learned" that get surfaced automatically the next time a similar task comes in — a simplified stand-in for ruflo's self-learning loop.
 
@@ -16,8 +17,14 @@ Every agent can read/write files, search the workspace (glob/grep), optionally r
 ```
 myruflo/
   cli.py              CLI entry point (run / memory / init / doctor / serve)
-  config.py           .env-based configuration, 3-tier model routing
+  config.py           .env-based configuration, 3-tier model routing,
+                       per-platform API keys and model overrides
   llm/client.py       Anthropic SDK wrapper (tool-use loop plumbing)
+  llm/specs.py        Static specs for every supported AI platform
+  llm/providers.py    OpenAI-compatible adapter (httpx) covering OpenAI,
+                       Gemini, xAI, DeepSeek, Mistral behind the same call()
+  llm/router.py       LLM classifier + rules router: picks the best
+                       configured platform per task type and model tier
   tools/              read_file, write_file, edit_file, list_dir, glob_search,
                        grep_search, run_shell — all sandboxed to MYRUFLO_WORKSPACE
   agents/
@@ -34,7 +41,9 @@ myruflo/
 
 Design choices worth knowing about:
 
-- **No Claude Code dependency.** Agents call the Anthropic API directly with `tools=[...]` (function calling), execute the requested tool locally, and feed the result back — a self-contained loop.
+- **No Claude Code dependency.** Agents call platform APIs directly with `tools=[...]` (function calling), execute the requested tool locally, and feed the result back — a self-contained loop.
+- **One internal dialect, many platforms.** Agents always speak Anthropic-style content blocks; `llm/providers.py` translates to/from the OpenAI chat-completions dialect for every other platform (they all expose OpenAI-compatible endpoints), so the tool-use loop is identical everywhere and needs no per-provider code.
+- **Routing degrades gracefully.** `MYRUFLO_ROUTER=auto` uses an LLM classifier with a keyword-rules fallback; `rules` skips the LLM call; `off` pins everything to `MYRUFLO_DEFAULT_PROVIDER`. Only platforms with configured keys are ever considered.
 - **Memory uses hashed bag-of-words vectors, not a real embedding model**, so the whole project only needs `anthropic` + `numpy` to install. It's good enough for "have I seen something like this before" recall; swap `memory/embedding.py` for a real embedding API/model if you need stronger semantic search.
 - **The shell tool is off by default** (`MYRUFLO_ALLOW_SHELL=false`). Turning it on lets agents run arbitrary commands in the workspace — only do this in a workspace/machine you're comfortable letting an LLM act on. There's a small denylist for obviously catastrophic commands, but it is a guardrail, not a sandbox.
 - **File tools are sandboxed** to `MYRUFLO_WORKSPACE` — paths that resolve outside it are rejected.
@@ -101,6 +110,21 @@ The Anthropic API key lives in Secret Manager as **`ANTHROPIC_AI_KEY`**, not in 
 
 Run `myruflo doctor` to see which source supplied the key (`source: env`, `source: env:MYRUFLO_EVL`, `source: env:ANTHROPIC_AI_KEY`, or `source: secret-manager`).
 
+### Multi-platform keys from Secret Manager
+
+Every other platform's key can live in Secret Manager too — no env var bindings needed. Whenever a GCP project is inferable (`GOOGLE_CLOUD_PROJECT` on Cloud Run/GCE, or `MYRUFLO_GCP_PROJECT` locally) and a key isn't found in the environment, the app looks up these default secret IDs:
+
+| Platform | Default secret ID(s) | Override with |
+|---|---|---|
+| Anthropic | `ANTHROPIC_AI_KEY`, `ANTHROPIC_API_KEY` | `MYRUFLO_SECRET_NAME` |
+| OpenAI | `OPENAI_API_KEY` | `MYRUFLO_SECRET_OPENAI` |
+| Gemini | `GEMINI_API_KEY`, `GOOGLE_API_KEY` | `MYRUFLO_SECRET_GEMINI` |
+| xAI | `XAI_API_KEY`, `GROK_API_KEY` | `MYRUFLO_SECRET_XAI` |
+| DeepSeek | `DEEPSEEK_API_KEY` | `MYRUFLO_SECRET_DEEPSEEK` |
+| Mistral | `MISTRAL_API_KEY` | `MYRUFLO_SECRET_MISTRAL` |
+
+Create a secret per platform you want enabled (e.g. `gcloud secrets create OPENAI_API_KEY --data-file=-`), and `deploy/gcp/deploy.sh` grants the runner service account access to whichever of these secrets exist. Platforms without a secret are simply skipped by the router. The container image installs `google-cloud-secret-manager`, so this works on Cloud Run with zero extra configuration.
+
 ### One image, two Cloud Run shapes
 
 The same container backs both a **Cloud Run Job** (`myruflo-job`, a "run a task, print the result, exit" batch runner) and a **Cloud Run Service** (`myruflo`, the web UI). `docker/entrypoint.sh` picks the mode at startup: if `MYRUFLO_TASK` is set it runs that one-shot CLI task and exits (the Job's behavior — reading the task from an env var rather than a CLI arg specifically so job executions can pass arbitrary free-form text without hitting gcloud's comma-separated `--args` escaping rules); otherwise it runs `myruflo serve`, which listens on `$PORT` for the Service.
@@ -147,7 +171,7 @@ pip install pytest
 pytest -q
 ```
 
-Tests cover memory search, hooks/pattern recall, file-tool sandboxing, and swarm routing logic — none of them call the Anthropic API, so they run offline.
+Tests cover memory search, hooks/pattern recall, file-tool sandboxing, swarm routing logic, the multi-platform router (classification, preference order, graceful degradation), and the OpenAI-compat dialect translation including a full simulated tool-use round trip — none of them call any AI platform API, so they run offline.
 
 ## Extending
 

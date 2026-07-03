@@ -44,6 +44,19 @@ gcloud secrets add-iam-policy-binding "$SECRET_NAME" \
   --member="serviceAccount:${SA_EMAIL}" \
   --role="roles/secretmanager.secretAccessor"
 
+# Multi-platform keys: the app resolves these secret IDs from Secret Manager
+# at runtime (see myruflo/llm/specs.py). Grant access to whichever ones exist
+# in this project — missing ones are skipped, and the app degrades gracefully.
+echo "==> Granting the runner access to any per-platform key secrets that exist"
+for PLATFORM_SECRET in OPENAI_API_KEY GEMINI_API_KEY GOOGLE_API_KEY XAI_API_KEY GROK_API_KEY DEEPSEEK_API_KEY MISTRAL_API_KEY ANTHROPIC_API_KEY; do
+  if gcloud secrets describe "$PLATFORM_SECRET" >/dev/null 2>&1; then
+    echo "    - $PLATFORM_SECRET"
+    gcloud secrets add-iam-policy-binding "$PLATFORM_SECRET" \
+      --member="serviceAccount:${SA_EMAIL}" \
+      --role="roles/secretmanager.secretAccessor" >/dev/null
+  fi
+done
+
 echo "==> Deploying Cloud Run Job: $JOB_NAME"
 gcloud run jobs deploy "$JOB_NAME" \
   --image="$IMAGE" \

@@ -12,8 +12,8 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from myruflo.config import Config
 from myruflo.llm.client import LLMClient
-from myruflo.web import admin, auth, chat, memory_ui, settings
-from myruflo.web.db import init_app_db
+from myruflo.web import admin, auth, chat, memory_ui, platform_settings, platforms, settings
+from myruflo.web.db import _connect, init_app_db
 from myruflo.web.deps import NotAuthenticated
 from myruflo.web.templating import STATIC_DIR, templates
 
@@ -39,9 +39,25 @@ def create_app(config: Config) -> FastAPI:
 
     init_app_db(config.app_db_path)
 
+    # Multi-platform router: covers every provider with a configured API key,
+    # including admin-set Secret Manager IDs stored in the app DB. None only
+    # when no provider at all is usable.
+    try:
+        conn = _connect(config.app_db_path)
+        try:
+            app.state.router, _ = platform_settings.build_router_with_overrides(config, conn)
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 - the web UI must still boot to show errors
+        app.state.router = None
+    if app.state.llm is None and app.state.router is not None:
+        # No Anthropic key but another platform is configured — chat still works.
+        app.state.llm = app.state.router.providers[app.state.router.default_provider].client
+
     app.include_router(auth.router)
     app.include_router(chat.router)
     app.include_router(admin.router)
+    app.include_router(platforms.router)
     app.include_router(settings.router)
     app.include_router(memory_ui.router)
 

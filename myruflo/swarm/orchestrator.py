@@ -12,9 +12,11 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from myruflo.agents.agent import Agent, AgentResult
+from myruflo.agents.roles import ROLES
 from myruflo.config import Config
 from myruflo.hooks.manager import HooksManager
 from myruflo.llm.client import LLMClient
+from myruflo.llm.router import LLMRouter, TaskProfile
 from myruflo.memory.store import MemoryStore
 
 FULL_PIPELINE = ["researcher", "planner", "coder", "tester", "reviewer"]
@@ -46,6 +48,27 @@ _ROUTES: list[tuple[re.Pattern, list[str]]] = [
 
 _LONG_TASK_WORD_COUNT = 40
 
+# TaskProfile-driven pipeline selection: (task_type, complexity) -> roles.
+# Falls back to the regex routes below when no classifier profile is available.
+_PROFILE_PIPELINES: dict[str, list[str]] = {
+    "coding": ["researcher", "coder", "tester"],
+    "research": ["researcher"],
+    "reasoning": ["generalist"],
+    "writing": ["generalist"],
+    "summarization": ["generalist"],
+    "review": ["reviewer"],
+    "testing": ["tester"],
+    "general": ["generalist"],
+}
+
+
+def pipeline_for_profile(profile: TaskProfile) -> list[str]:
+    if profile.complexity == "high":
+        return FULL_PIPELINE
+    if profile.complexity == "low" and profile.task_type in {"coding", "general", "writing"}:
+        return ["generalist"]
+    return _PROFILE_PIPELINES.get(profile.task_type, ["generalist"])
+
 
 def choose_pipeline(task: str, force_swarm: bool | None = None) -> list[str]:
     if force_swarm is False:
@@ -65,6 +88,9 @@ class SwarmReport:
     task: str
     pipeline: list[str]
     results: list[AgentResult] = field(default_factory=list)
+    task_type: str = "general"
+    complexity: str = "medium"
+    routing_source: str = "rules"
 
     @property
     def final_text(self) -> str:
@@ -72,11 +98,19 @@ class SwarmReport:
 
 
 class Orchestrator:
-    def __init__(self, config: Config, llm: LLMClient, memory: MemoryStore, hooks: HooksManager) -> None:
+    def __init__(
+        self,
+        config: Config,
+        llm: LLMClient,
+        memory: MemoryStore,
+        hooks: HooksManager,
+        router: LLMRouter | None = None,
+    ) -> None:
         self.config = config
         self.llm = llm
         self.memory = memory
         self.hooks = hooks
+        self.router = router
 
     def run(
         self,
@@ -87,18 +121,60 @@ class Orchestrator:
         image_attachments: list[dict] | None = None,
         on_progress: Callable[[str], None] | None = None,
     ) -> SwarmReport:
-        pipeline = choose_pipeline(task, force_swarm)
-        report = SwarmReport(task=task, pipeline=pipeline)
+        # 1. Classify once (LLM classifier + rules fallback), then choose the
+        #    pipeline: the classifier profile drives it when available, with
+        #    the regex routes as safety net and force_swarm always winning.
+        profile = self.router.classify(task) if self.router else TaskProfile(source="default")
+        if force_swarm is True:
+            pipeline = FULL_PIPELINE
+        elif force_swarm is False:
+            pipeline = ["generalist"]
+        elif self.router and profile.source == "llm":
+            pipeline = pipeline_for_profile(profile)
+        else:
+            pipeline = choose_pipeline(task, force_swarm)
+
+        report = SwarmReport(
+            task=task,
+            pipeline=pipeline,
+            task_type=profile.task_type,
+            complexity=profile.complexity,
+            routing_source=profile.source,
+        )
 
         context = ""
         for role in pipeline:
+            # 2. Route each role to the best configured platform for this
+            #    task type at the role's model tier.
+            if self.router:
+                tier = ROLES[role][0]
+                route = self.router.route_for_role(tier, profile)
+                llm_client, model, provider = route.client, route.model, route.provider
+            else:
+                llm_client, model, provider = self.llm, None, "anthropic"
+
             if on_progress:
-                on_progress(ROLE_STATUS.get(role, f"Working as {role}..."))
-            agent = Agent(role, self.config, self.llm, self.memory, self.hooks, enabled_tools=enabled_tools)
+                status = ROLE_STATUS.get(role, f"Working as {role}...")
+                on_progress(f"{status} ({provider})" if self.router else status)
+
+            agent = Agent(
+                role,
+                self.config,
+                llm_client,
+                self.memory,
+                self.hooks,
+                enabled_tools=enabled_tools,
+                model=model,
+                provider=provider,
+            )
             result = agent.run(task, context=context, image_attachments=image_attachments, on_progress=on_progress)
             report.results.append(result)
             handoff = f"[{role} said]:\n{result.final_text}"
             context = f"{context}\n\n{handoff}" if context else handoff
-            self.memory.add("swarm-log", f"role={role} task={task[:150]} -> {result.final_text[:300]}")
+            self.memory.add(
+                "swarm-log",
+                f"role={role} provider={result.provider} model={result.model} "
+                f"task={task[:150]} -> {result.final_text[:300]}",
+            )
 
         return report

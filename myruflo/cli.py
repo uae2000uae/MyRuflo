@@ -8,7 +8,7 @@ from pathlib import Path
 
 from myruflo.config import load_config
 from myruflo.hooks.manager import HooksManager
-from myruflo.llm.client import LLMClient
+from myruflo.llm.router import build_router
 from myruflo.memory.store import MemoryStore
 from myruflo.swarm.orchestrator import Orchestrator
 
@@ -18,19 +18,27 @@ def cmd_run(args: argparse.Namespace) -> None:
     memory = MemoryStore(config.memory_db_path)
     hooks = HooksManager(config.hooks_log_path, memory)
 
-    try:
-        llm = LLMClient(config.api_key)
-    except ValueError as exc:
-        print(f"ERROR: {exc}\nRun 'myruflo doctor' to check your setup.")
+    router = build_router(config)
+    if router is None:
+        print(
+            "ERROR: no AI provider is configured. Set at least one API key in .env "
+            "(ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY, "
+            "DEEPSEEK_API_KEY or MISTRAL_API_KEY).\nRun 'myruflo doctor' to check your setup."
+        )
         sys.exit(1)
 
+    default_client = router.providers[router.default_provider].client
     force_swarm = True if args.swarm else False if args.no_swarm else None
-    orchestrator = Orchestrator(config, llm, memory, hooks)
+    orchestrator = Orchestrator(config, default_client, memory, hooks, router=router)
     report = orchestrator.run(args.task, force_swarm=force_swarm)
 
-    print(f"\nPipeline: {' -> '.join(report.pipeline)}\n")
+    print(
+        f"\nTask type: {report.task_type} | complexity: {report.complexity} "
+        f"| classified by: {report.routing_source}"
+    )
+    print(f"Pipeline: {' -> '.join(report.pipeline)}\n")
     for result in report.results:
-        print(f"=== {result.role} ({result.turns_used} turn(s)) ===")
+        print(f"=== {result.role} via {result.provider}:{result.model} ({result.turns_used} turn(s)) ===")
         print(result.final_text)
         print()
 
@@ -83,8 +91,8 @@ def cmd_serve(args: argparse.Namespace) -> None:
     from myruflo.web.app import create_app
 
     config = load_config()
-    if not config.api_key:
-        print("WARNING: ANTHROPIC_AI_KEY is not set - chat will be unavailable until it is.")
+    if not config.configured_providers and not config.api_key:
+        print("WARNING: no AI platform API key is set - chat will be unavailable until one is.")
     app = create_app(config)
     port = int(os.environ.get("PORT", config.web_port))
     uvicorn.run(app, host=config.web_host, port=port)
@@ -103,12 +111,24 @@ def cmd_doctor(args: argparse.Namespace) -> None:
     print(f"data dir:  {config.data_dir} ({'exists' if config.data_dir.is_dir() else 'MISSING'})")
     print(f"shell tool: {'enabled' if config.allow_shell else 'disabled'}")
 
-    if config.api_key:
-        print(f"ANTHROPIC_AI_KEY: set (source: {config.api_key_source})")
-    else:
+    print(f"router mode: {config.router_mode} (default provider: {config.default_provider})")
+
+    print("\nAI platforms:")
+    from myruflo.llm.specs import PROVIDER_SPECS
+
+    configured = 0
+    for name, spec in PROVIDER_SPECS.items():
+        key, source = config.provider_keys.get(name, ("", "unset"))
+        if key:
+            configured += 1
+            print(f"  [ok]      {spec.label:<20} key source: {source}")
+        else:
+            print(f"  [not set] {spec.label:<20} set {spec.key_env_vars[0]} to enable")
+    if configured == 0:
         problems.append(
-            "ANTHROPIC_AI_KEY is not set (copy .env.example to .env locally, "
-            "or bind the MYRUFLO_EVL secret when hosting on GCP)"
+            "no AI platform is configured — set at least one API key in .env "
+            "(ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY, "
+            "DEEPSEEK_API_KEY or MISTRAL_API_KEY), or bind a secret when hosting on GCP"
         )
 
     try:

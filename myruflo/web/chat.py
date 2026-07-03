@@ -148,12 +148,19 @@ def enhance_message(
     _get_owned_conversation(conn, conversation_id, user["id"])
     config = request.app.state.config
     llm: LLMClient | None = request.app.state.llm
-    if llm is None:
-        raise HTTPException(status_code=500, detail="ANTHROPIC_AI_KEY is not configured on the server.")
+    router = getattr(request.app.state, "router", None)
+    if llm is None and router is None:
+        raise HTTPException(status_code=500, detail="No AI platform API key is configured on the server.")
+
+    if router is not None:
+        route = router.route("fast", "writing")
+        client, model = route.client, route.model
+    else:
+        client, model = llm, config.model_for_tier("fast")
 
     try:
-        response = llm.call(
-            model=config.model_for_tier("fast"),
+        response = client.call(
+            model=model,
             system=_ENHANCE_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": payload.text}],
             max_tokens=1024,
@@ -177,9 +184,10 @@ def post_message(
     conversation = _get_owned_conversation(conn, conversation_id, user["id"])
     config = request.app.state.config
     llm: LLMClient | None = request.app.state.llm
-    if llm is None:
+    router = getattr(request.app.state, "router", None)
+    if llm is None and router is None:
         raise HTTPException(
-            status_code=500, detail="ANTHROPIC_AI_KEY is not configured on the server — chat is unavailable."
+            status_code=500, detail="No AI platform API key is configured on the server — chat is unavailable."
         )
 
     force_swarm = _MODE_TO_FORCE_SWARM.get(mode, None)
@@ -213,7 +221,7 @@ def post_message(
 
     memory = MemoryStore(config.memory_db_path)
     hooks = HooksManager(config.hooks_log_path, memory)
-    orchestrator = Orchestrator(config, llm, memory, hooks)
+    orchestrator = Orchestrator(config, llm, memory, hooks, router=router)
 
     def _update_status(status_text: str) -> None:
         conn.execute("UPDATE conversations SET status = ? WHERE id = ?", (status_text, conversation_id))

@@ -11,6 +11,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from myruflo.llm.specs import PROVIDER_SPECS
+
 
 def _load_dotenv(path: Path) -> None:
     if not path.is_file():
@@ -96,6 +98,66 @@ def _resolve_api_key() -> tuple[str, str]:
     return "", "unset"
 
 
+def _resolve_provider_keys() -> dict[str, tuple[str, str]]:
+    """Resolve every platform's API key: {provider: (key, source)}.
+
+    Resolution order per provider:
+    1. Env var(s) — e.g. OPENAI_API_KEY (covers local `.env` and Cloud Run's
+       `--set-secrets` env var bindings).
+    2. GCP Secret Manager, when a project is inferable (MYRUFLO_GCP_PROJECT,
+       or GOOGLE_CLOUD_PROJECT which GCP compute sets automatically):
+       a. the secret ID named by MYRUFLO_SECRET_<PROVIDER>, if set;
+       b. otherwise each of the provider's default secret IDs (same names as
+          the env vars: OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY,
+          DEEPSEEK_API_KEY, MISTRAL_API_KEY — see llm/specs.py).
+
+    Anthropic keeps its richer legacy resolution on top (multiple env var
+    names + MYRUFLO_SECRET_NAME). All lookups are best-effort and never
+    raise; missing keys yield ("", "unset") so the router degrades
+    gracefully to whatever is configured.
+    """
+    keys: dict[str, tuple[str, str]] = {"anthropic": _resolve_api_key()}
+
+    project = os.environ.get("MYRUFLO_GCP_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT")
+    for name, spec in PROVIDER_SPECS.items():
+        if name == "anthropic":
+            continue
+        resolved: tuple[str, str] = ("", "unset")
+        for env_var in spec.key_env_vars:
+            value = os.environ.get(env_var, "")
+            if value:
+                resolved = (value, f"env:{env_var}")
+                break
+        if resolved[0] == "" and project:
+            override = os.environ.get(f"MYRUFLO_SECRET_{name.upper()}", "")
+            candidates = (override,) if override else spec.secret_names
+            for secret_name in candidates:
+                fetched = _fetch_gcp_secret(project, secret_name)
+                if fetched:
+                    resolved = (fetched, f"secret-manager:{secret_name}")
+                    break
+        keys[name] = resolved
+    return keys
+
+
+def _resolve_provider_models() -> dict[str, dict[str, str]]:
+    """Per-provider tier->model overrides via MYRUFLO_<PROVIDER>_MODEL_<TIER>.
+
+    Anthropic also honours the legacy MYRUFLO_MODEL_<TIER> names.
+    """
+    models: dict[str, dict[str, str]] = {}
+    for name in PROVIDER_SPECS:
+        tier_models: dict[str, str] = {}
+        for tier in ("fast", "default", "heavy"):
+            value = os.environ.get(f"MYRUFLO_{name.upper()}_MODEL_{tier.upper()}", "")
+            if not value and name == "anthropic":
+                value = os.environ.get(f"MYRUFLO_MODEL_{tier.upper()}", "")
+            if value:
+                tier_models[tier] = value
+        models[name] = tier_models
+    return models
+
+
 @dataclass
 class Config:
     api_key: str
@@ -111,6 +173,11 @@ class Config:
     web_host: str = "0.0.0.0"
     web_port: int = 8080
     web_secret_key: str = ""
+    # Multi-provider routing
+    provider_keys: dict = field(default_factory=dict)  # {name: (key, source)}
+    provider_models: dict = field(default_factory=dict)  # {name: {tier: model}}
+    router_mode: str = "auto"  # "auto" (LLM classifier + rules) | "rules" | "off"
+    default_provider: str = "anthropic"
 
     @property
     def memory_db_path(self) -> Path:
@@ -130,6 +197,10 @@ class Config:
             "default": self.model_default,
             "heavy": self.model_heavy,
         }.get(tier, self.model_default)
+
+    @property
+    def configured_providers(self) -> list[str]:
+        return [name for name, (key, _) in self.provider_keys.items() if key]
 
 
 def load_config(project_root: Path | None = None) -> Config:
@@ -152,7 +223,12 @@ def load_config(project_root: Path | None = None) -> Config:
         web_host=os.environ.get("MYRUFLO_WEB_HOST", "0.0.0.0"),
         web_port=int(os.environ.get("MYRUFLO_WEB_PORT", "8080")),
         web_secret_key=os.environ.get("WEB_SECRET_KEY", ""),
+        provider_keys=_resolve_provider_keys(),
+        provider_models=_resolve_provider_models(),
+        router_mode=os.environ.get("MYRUFLO_ROUTER", "auto").strip().lower(),
+        default_provider=os.environ.get("MYRUFLO_DEFAULT_PROVIDER", "anthropic").strip().lower(),
     )
     cfg.workspace.mkdir(parents=True, exist_ok=True)
     cfg.data_dir.mkdir(parents=True, exist_ok=True)
     return cfg
+

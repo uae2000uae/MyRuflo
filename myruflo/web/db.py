@@ -63,6 +63,13 @@ CREATE TABLE IF NOT EXISTS tool_settings (
     updated_by INTEGER REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS platform_settings (
+    provider TEXT PRIMARY KEY,
+    secret_id TEXT NOT NULL DEFAULT '',
+    updated_at TEXT NOT NULL,
+    updated_by INTEGER REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS attachments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     message_id INTEGER NOT NULL REFERENCES messages(id),

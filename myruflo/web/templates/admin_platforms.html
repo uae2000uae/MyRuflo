@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+{% block title %}AI platforms - MyRuflo{% endblock %}
+{% block content %}
+<div class="page">
+    <header class="page-header">
+        <h1>Admin dashboard</h1>
+        <nav class="page-tabs">
+            <a href="/admin">Dashboard</a>
+            <a href="/admin/platforms" class="active">Platforms</a>
+            <a href="/admin/tools">Tools</a>
+            <a href="/admin/users">Users</a>
+        </nav>
+    </header>
+
+    <section class="card">
+        <h2>AI platforms</h2>
+        <p class="text-muted">
+            Each platform's API key is read from Google Secret Manager. Paste the <strong>secret ID</strong>
+            (the secret's name, not the key itself) and press <em>Save &amp; activate</em> — the platform joins
+            the router immediately, no restart needed. <em>Test</em> runs one tiny live completion to prove the
+            key works. Clearing the field falls back to env vars / default secret IDs.
+            {% if gcp_project %}
+            <br>GCP project: <code>{{ gcp_project }}</code>
+            {% else %}
+            <br><strong>No GCP project detected</strong> — set <code>MYRUFLO_GCP_PROJECT</code> in
+            <code>.env</code> (automatic on Cloud Run) before activating secrets.
+            {% endif %}
+        </p>
+        <div class="table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Platform</th>
+                        <th>Status</th>
+                        <th>Secret ID</th>
+                        <th>Connectivity</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in platforms %}
+                    <tr id="row-{{ p.name }}">
+                        <td>
+                            {{ p.label }}<br>
+                            <span class="empty-hint">fast model: <code>{{ p.fast_model }}</code></span>
+                        </td>
+                        <td>
+                            <span id="status-{{ p.name }}">
+                                {% if p.active %}
+                                <span class="pill pill-success">active</span>
+                                <span class="empty-hint">({{ p.key_source }})</span>
+                                {% else %}
+                                <span class="pill pill-danger">not configured</span>
+                                {% endif %}
+                            </span>
+                        </td>
+                        <td>
+                            <input type="text" id="secret-{{ p.name }}" value="{{ p.secret_id }}"
+                                   placeholder="{{ p.default_secret_ids }}"
+                                   style="width: 100%; min-width: 180px;" autocomplete="off" spellcheck="false">
+                        </td>
+                        <td>
+                            <span id="test-{{ p.name }}" class="empty-hint">—</span>
+                        </td>
+                        <td style="white-space: nowrap;">
+                            <button type="button" class="btn btn-secondary" onclick="savePlatform('{{ p.name }}')">
+                                Save &amp; activate
+                            </button>
+                            <button type="button" class="btn btn-secondary" onclick="testPlatform('{{ p.name }}')">
+                                Test
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<script>
+function setStatus(name, html) {
+    document.getElementById("status-" + name).innerHTML = html;
+}
+function setTest(name, html) {
+    document.getElementById("test-" + name).innerHTML = html;
+}
+function esc(text) {
+    const div = document.createElement("div");
+    div.textContent = text || "";
+    return div.innerHTML;
+}
+
+async function savePlatform(name) {
+    const secretId = document.getElementById("secret-" + name).value.trim();
+    setStatus(name, '<span class="empty-hint">activating…</span>');
+    setTest(name, "—");
+    try {
+        const body = new URLSearchParams({secret_id: secretId});
+        const response = await fetch("/admin/platforms/" + name + "/secret", {method: "POST", body: body});
+        const data = await response.json();
+        if (data.active) {
+            setStatus(name, '<span class="pill pill-success">active</span> <span class="empty-hint">(' + esc(data.key_source) + ")</span>");
+        } else {
+            setStatus(name, '<span class="pill pill-danger">not configured</span>');
+        }
+        if (data.error) {
+            setTest(name, '<span class="pill pill-danger">error</span> <span class="empty-hint">' + esc(data.error) + "</span>");
+        }
+    } catch (err) {
+        setStatus(name, '<span class="pill pill-danger">request failed</span> <span class="empty-hint">' + esc(String(err)) + "</span>");
+    }
+}
+
+async function testPlatform(name) {
+    setTest(name, '<span class="empty-hint">testing…</span>');
+    try {
+        const response = await fetch("/admin/platforms/" + name + "/test", {method: "POST"});
+        const data = await response.json();
+        if (data.ok) {
+            setTest(name, '<span class="pill pill-success">ok</span> <span class="empty-hint">'
+                + esc(data.model) + " · " + data.latency_ms + "ms · “" + esc(data.message) + "”</span>");
+        } else {
+            setTest(name, '<span class="pill pill-danger">failed</span> <span class="empty-hint">' + esc(data.message) + "</span>");
+        }
+    } catch (err) {
+        setTest(name, '<span class="pill pill-danger">request failed</span> <span class="empty-hint">' + esc(String(err)) + "</span>");
+    }
+}
+</script>
+{% endblock %}

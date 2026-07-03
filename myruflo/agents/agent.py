@@ -21,6 +21,8 @@ class AgentResult:
     final_text: str
     turns_used: int
     transcript: list[dict] = field(default_factory=list)
+    provider: str = "anthropic"
+    model: str = ""
 
 
 class Agent:
@@ -33,16 +35,20 @@ class Agent:
         hooks: HooksManager,
         *,
         enabled_tools: set[str] | None = None,
+        model: str | None = None,
+        provider: str = "anthropic",
     ) -> None:
         if role not in ROLES:
             raise ValueError(f"Unknown role '{role}'. Known roles: {sorted(ROLES)}")
         self.role = role
         self.config = config
-        self.llm = llm
+        self.llm = llm  # any client exposing .call(...) -> LLMResponse
         self.memory = memory
         self.hooks = hooks
         self._enabled_tools = enabled_tools
         self._tier, self._system_prompt = ROLES[role]
+        self._model_override = model
+        self.provider = provider
 
     def run(
         self,
@@ -67,7 +73,7 @@ class Agent:
         tools = build_tool_schemas(
             include_shell=self.config.allow_shell, include_memory=True, enabled_tools=self._enabled_tools
         )
-        model = self.config.model_for_tier(self._tier)
+        model = self._model_override or self.config.model_for_tier(self._tier)
 
         final_text = ""
         turns = 0
@@ -111,4 +117,12 @@ class Agent:
         self.hooks.post_task(
             self.role, task, success=bool(final_text.strip()), summary=final_text[:500]
         )
-        return AgentResult(role=self.role, task=task, final_text=final_text, turns_used=turns, transcript=messages)
+        return AgentResult(
+            role=self.role,
+            task=task,
+            final_text=final_text,
+            turns_used=turns,
+            transcript=messages,
+            provider=self.provider,
+            model=model,
+        )
